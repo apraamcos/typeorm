@@ -125,6 +125,12 @@ export class PlatformTools {
                  */
                 case "react-native-sqlite-storage":
                     return require("react-native-sqlite-storage")
+
+                /**
+                 * snowflake
+                 */
+                case "snowflake":
+                    return require("snowflake-sdk")
             }
         } catch (err) {
             return require(path.resolve(

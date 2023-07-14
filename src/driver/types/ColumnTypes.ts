@@ -22,8 +22,8 @@ export type PrimaryGeneratedColumnType =
  * Column types where spatial properties are used.
  */
 export type SpatialColumnType =
-    | "geometry" // postgres
-    | "geography" // postgres
+    | "geometry" // postgres, snowflake
+    | "geography" // postgres, snowflake
     | "st_geometry" // sap
     | "st_point" // sap
 
@@ -199,6 +199,11 @@ export type SimpleColumnType =
     | "array" // cockroachdb, sap, spanner
     | "cube" // postgres
     | "ltree" // postgres
+
+    // snowflake types
+    | "byteint"
+    | "variant"
+    | "object"
 
 /**
  * Any column type column can be.
