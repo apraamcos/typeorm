@@ -23,9 +23,13 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
       - name: Install
-        run: npm ci
+        run: npm i
       - name: Install
         run: npm install oracledb
+      - name: Clean npm cache
+        run: npm cache clean --force
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Increase version number
         run: npm version patch
         env:
