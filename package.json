@@ -143,10 +143,6 @@
     "typeorm-aurora-data-api-driver": "^2.4.4",
     "typescript": "^4.9.5"
   },
-  "peerDependencies": {
-    "pg": "^8.5.1",
-    "ts-node": "^10.7.0"
-  },
   "peerDependenciesMeta": {
     "@google-cloud/spanner": {
       "optional": true
