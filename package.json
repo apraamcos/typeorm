@@ -1,6 +1,6 @@
 {
   "name": "@apraamcos/typeorm",
-  "version": "0.9.45",
+  "version": "0.9.47",
   "description": "Data-Mapper ORM for TypeScript, ES7, ES6, ES5. Supports MySQL, PostgreSQL, MariaDB, SQLite, MS SQL Server, Oracle, MongoDB databases.",
   "license": "MIT",
   "readmeFilename": "README.md",
@@ -240,6 +240,7 @@
     "package": "gulp package",
     "pack": "gulp pack",
     "publish": "gulp publish",
+    "packagePublish": "gulp packagePublish",
     "lint": "prettier --check \"./src/**/*.ts\" \"./test/**/*.ts\" \"./sample/**/*.ts\"",
     "format": "prettier --write --end-of-line auto \"./src/**/*.ts\" \"./test/**/*.ts\" \"./sample/**/*.ts\"",
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s -r 2"
