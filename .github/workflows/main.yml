@@ -28,17 +28,17 @@ jobs:
         run: npm version patch
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Push
-        run: |
-          git push
-          git push --tags
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Clean npm cache
         run: npm cache clean --force
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish
         run: npm run publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push
+        run: |
+          git push
+          git push --tags
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
