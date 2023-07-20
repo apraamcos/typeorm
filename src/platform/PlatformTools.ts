@@ -67,12 +67,6 @@ export class PlatformTools {
                     return require("mysql2")
 
                 /**
-                 * oracle
-                 */
-                case "oracledb":
-                    return require("oracledb")
-
-                /**
                  * postgres
                  */
                 case "pg":
