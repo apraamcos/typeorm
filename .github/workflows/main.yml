@@ -24,12 +24,20 @@ jobs:
           git config --local user.name "github-actions[bot]"
       - name: Install
         run: npm ci
+      - name: Increase version number
+        run: npm version patch
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Clean npm cache
         run: npm cache clean --force
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pack
+        run: npm run pack
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish
-        run: npm run publish
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Push
