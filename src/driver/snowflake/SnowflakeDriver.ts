@@ -1,3 +1,5 @@
+import type { Connection, SnowflakeError } from "snowflake-sdk"
+import { createConnection } from "snowflake-sdk"
 import { ObjectLiteral } from "../../common/ObjectLiteral"
 import { DataSource } from "../../data-source"
 import { ConnectionIsNotSetError } from "../../error"
@@ -21,8 +23,6 @@ import { MappedColumnTypes } from "../types/MappedColumnTypes"
 import { UpsertType } from "../types/UpsertType"
 import { SnowflakeConnectionOptions } from "./SnowflakeConnectionOptions"
 import { SnowflakeQueryRunner } from "./SnowflakeQueryRunner"
-import type { Connection, SnowflakeError } from "snowflake-sdk"
-import { createConnection } from "snowflake-sdk"
 
 export class SnowflakeDriver implements Driver {
     // -------------------------------------------------------------------------
@@ -276,20 +276,20 @@ export class SnowflakeDriver implements Driver {
                 ),
             )
         const { logger } = this.databaseConnection
-        await new Promise((resolve, reject) => {
-            this.databaseConnection.destroy((err: SnowflakeError) => {
-                if (err) {
-                    logger.log("warn", `Unable to disconnect: ${err.message}`)
-                    reject(err)
-                } else {
-                    logger.log(
-                        "warn",
-                        `Disconnected connection with id: ${this.databaseConnection.getId()}`,
-                    )
-                    resolve(this.databaseConnection.getId())
-                }
-            })
-        })
+        // await new Promise((resolve, reject) => {
+        //     this.databaseConnection.destroy((err: SnowflakeError) => {
+        //         if (err) {
+        //             logger.log("warn", `Unable to disconnect: ${err.message}`)
+        //             reject(err)
+        //         } else {
+        //             logger.log(
+        //                 "warn",
+        //                 `Disconnected connection with id: ${this.databaseConnection.getId()}`,
+        //             )
+        //             resolve(this.databaseConnection.getId())
+        //         }
+        //     })
+        // })
         this.databaseConnection = undefined
     }
 
