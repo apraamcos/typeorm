@@ -275,7 +275,7 @@ export class SnowflakeDriver implements Driver {
                     "connection tried to disconnect but was already at CLOSED state",
                 ),
             )
-        const { logger } = this.databaseConnection
+        // const { logger } = this.databaseConnection
         // await new Promise((resolve, reject) => {
         //     this.databaseConnection.destroy((err: SnowflakeError) => {
         //         if (err) {
