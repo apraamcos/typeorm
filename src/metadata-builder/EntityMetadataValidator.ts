@@ -1,14 +1,14 @@
-import { EntityMetadata } from "../metadata/EntityMetadata"
-import { MissingPrimaryColumnError } from "../error/MissingPrimaryColumnError"
-import { CircularRelationsError } from "../error/CircularRelationsError"
-import { DepGraph } from "../util/DepGraph"
 import { Driver } from "../driver/Driver"
-import { DataTypeNotSupportedError } from "../error/DataTypeNotSupportedError"
-import { ColumnType } from "../driver/types/ColumnTypes"
-import { NoConnectionOptionError } from "../error/NoConnectionOptionError"
-import { InitializedRelationError } from "../error/InitializedRelationError"
-import { TypeORMError } from "../error"
 import { DriverUtils } from "../driver/DriverUtils"
+import { ColumnType } from "../driver/types/ColumnTypes"
+import { TypeORMError } from "../error"
+import { CircularRelationsError } from "../error/CircularRelationsError"
+import { DataTypeNotSupportedError } from "../error/DataTypeNotSupportedError"
+import { InitializedRelationError } from "../error/InitializedRelationError"
+import { MissingPrimaryColumnError } from "../error/MissingPrimaryColumnError"
+import { NoConnectionOptionError } from "../error/NoConnectionOptionError"
+import { EntityMetadata } from "../metadata/EntityMetadata"
+import { DepGraph } from "../util/DepGraph"
 
 /// todo: add check if there are multiple tables with the same name
 /// todo: add checks when generated column / table names are too long for the specific driver
@@ -55,7 +55,12 @@ export class EntityMetadataValidator {
         driver: Driver,
     ) {
         // check if table metadata has an id
-        if (!entityMetadata.primaryColumns.length && !entityMetadata.isJunction)
+        // Snowflake is schema less, semi data structure, which don't have primary key column
+        if (
+            !entityMetadata.primaryColumns.length &&
+            !entityMetadata.isJunction &&
+            driver.options.type !== "snowflake"
+        )
             throw new MissingPrimaryColumnError(entityMetadata)
 
         // if entity has multiple primary keys and uses custom constraint name,
