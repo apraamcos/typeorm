@@ -204,6 +204,9 @@ export type SimpleColumnType =
     | "byteint"
     | "variant"
     | "object"
+    | "timestamp_ltz"
+    | "timestamp_ntz"
+    | "timestamp_tz"
 
 /**
  * Any column type column can be.

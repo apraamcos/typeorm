@@ -121,9 +121,9 @@ export class SnowflakeDriver implements Driver {
         "datetime",
         "time",
         "timestamp",
-        "timestamp with local time zone",
-        "timestamp without time zone",
-        "timestamp with time zone",
+        "timestamp_ltz",
+        "timestamp_ntz",
+        "timestamp_tz",
         "variant",
         "object",
         "array",
@@ -208,10 +208,9 @@ export class SnowflakeDriver implements Driver {
         character: { length: 1 },
         bit: { length: 1 },
         interval: { precision: 6 },
-        "time without time zone": { precision: 6 },
-        "time with time zone": { precision: 6 },
-        "timestamp without time zone": { precision: 6 },
-        "timestamp with time zone": { precision: 6 },
+        timestamp_ltz: { precision: 6 },
+        timestamp_ntz: { precision: 6 },
+        timestamp_tz: { precision: 6 },
     }
 
     cteCapabilities: CteCapabilities = {
@@ -660,16 +659,14 @@ export class SnowflakeDriver implements Driver {
             column.type === "int4"
         ) {
             return "integer"
-        } else if (column.type === String || column.type === "varchar") {
-            return "character varying"
         } else if (column.type === Date || column.type === "timestamp") {
-            return "timestamp without time zone"
+            return "timestamp_ntz"
         } else if (column.type === "timestamptz") {
-            return "timestamp with time zone"
+            return "timestamp_ltz"
         } else if (column.type === "time") {
-            return "time without time zone"
+            return "timestamp_ntz"
         } else if (column.type === "timetz") {
-            return "time with time zone"
+            return "timestamp_ltz"
         } else if (column.type === Boolean || column.type === "bool") {
             return "boolean"
         } else if (column.type === "simple-array") {
@@ -690,8 +687,6 @@ export class SnowflakeDriver implements Driver {
             return "real"
         } else if (column.type === "char") {
             return "character"
-        } else if (column.type === "varbit") {
-            return "bit varying"
         } else {
             return (column.type as string) || ""
         }
