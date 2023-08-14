@@ -1,9 +1,10 @@
 import type snowflake from "snowflake-sdk"
 import { SnowflakeError } from "snowflake-sdk"
 import { ObjectLiteral } from "../../common/ObjectLiteral"
-import { TypeORMError } from "../../error"
+import { QueryFailedError, TypeORMError } from "../../error"
 import { ReadStream } from "../../platform/PlatformTools"
 import { BaseQueryRunner } from "../../query-runner/BaseQueryRunner"
+import { QueryResult } from "../../query-runner/QueryResult"
 import { QueryRunner } from "../../query-runner/QueryRunner"
 import { TableIndexOptions } from "../../schema-builder/options/TableIndexOptions"
 import { Table } from "../../schema-builder/table/Table"
@@ -110,18 +111,31 @@ export class SnowflakeQueryRunner
         parameters?: any[],
         useStructuredResult: boolean = false,
     ): Promise<any> {
-        const databaseConnection = await this.driver.databaseConnection
-        return new Promise((resolve, reject) =>
-            databaseConnection.execute({
-                sqlText: query,
-                binds: parameters,
-                complete: (
-                    err: SnowflakeError | undefined,
-                    stmt: snowflake.Statement,
-                    rows: any,
-                ) => (err ? reject(err) : resolve(rows || [])),
-            }),
-        )
+        try {
+            const databaseConnection = await this.driver.databaseConnection
+            const executeQuery = new Promise((resolve, reject) =>
+                databaseConnection.execute({
+                    sqlText: query,
+                    binds: parameters,
+                    complete: (
+                        err: SnowflakeError | undefined,
+                        stmt: snowflake.Statement,
+                        rows: any,
+                    ) => (err ? reject(err) : resolve(rows || [])),
+                }),
+            )
+            const result = new QueryResult()
+            result.records = (await executeQuery) as any[]
+            return result
+        } catch (err) {
+            this.driver.connection.logger.logQueryError(
+                err,
+                query,
+                parameters,
+                this,
+            )
+            throw new QueryFailedError(query, parameters, err)
+        }
     }
 
     /**

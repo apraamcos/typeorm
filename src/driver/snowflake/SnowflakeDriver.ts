@@ -257,7 +257,7 @@ export class SnowflakeDriver implements Driver {
                 ),
             )
         } catch (err) {
-            logger.log("warn", `${err} ${JSON.stringify(this.options)}`)
+            logger.log("warn", err)
         }
     }
 
