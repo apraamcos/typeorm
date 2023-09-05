@@ -8,6 +8,7 @@ import { InitializedRelationError } from "../error/InitializedRelationError"
 import { MissingPrimaryColumnError } from "../error/MissingPrimaryColumnError"
 import { NoConnectionOptionError } from "../error/NoConnectionOptionError"
 import { EntityMetadata } from "../metadata/EntityMetadata"
+import { isSnowflakeConnection } from "../util/ConnectionType"
 import { DepGraph } from "../util/DepGraph"
 
 /// todo: add check if there are multiple tables with the same name
@@ -55,11 +56,11 @@ export class EntityMetadataValidator {
         driver: Driver,
     ) {
         // check if table metadata has an id
-        // Snowflake is schema less, semi data structure, which don't have primary key column
+        // Snowflake is schema less, semi data structure, which allow to not have primary key column
         if (
             !entityMetadata.primaryColumns.length &&
             !entityMetadata.isJunction &&
-            driver.options.type !== "snowflake"
+            !isSnowflakeConnection(driver.options.type)
         )
             throw new MissingPrimaryColumnError(entityMetadata)
 
