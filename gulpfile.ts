@@ -1,17 +1,5 @@
 import { Gulpclass, Task, SequenceTask, MergedTask } from "gulpclass";
 
-<<<<<<< HEAD
-import { Gulpclass, MergedTask, SequenceTask, Task } from "gulpclass"
-
-const fs = require("fs")
-const gulp = require("gulp")
-const del = require("del")
-const shell = require("gulp-shell")
-const replace = require("gulp-replace")
-const rename = require("gulp-rename")
-const sourcemaps = require("gulp-sourcemaps")
-const ts = require("gulp-typescript")
-=======
 import fs from "fs";
 import gulp from "gulp";
 import del from "del";
@@ -20,7 +8,6 @@ import replace from "gulp-replace";
 import rename from "gulp-rename";
 import sourcemaps from "gulp-sourcemaps";
 import ts from "gulp-typescript";
->>>>>>> master
 
 @Gulpclass()
 export class Gulpfile {
@@ -29,27 +16,11 @@ export class Gulpfile {
     // -------------------------------------------------------------------------
 
     /**
-<<<<<<< HEAD
-     * Creates a delay and resolves after 15 seconds.
-     */
-    @Task()
-    wait(cb: Function) {
-        setTimeout(() => cb(), 15000)
-    }
-
-    /**
-     * Cleans build folder.
-     */
-    @Task()
-    clean(cb: Function) {
-        return del(["./build/**"], cb)
-=======
      * Cleans build folder.
      */
     @Task()
     async clean() {
         return del(["./build/**"]);
->>>>>>> master
     }
 
     /**
@@ -87,36 +58,14 @@ export class Gulpfile {
      */
     @Task()
     browserCopyTemplates() {
-<<<<<<< HEAD
-        return gulp
-            .src("./src/platform/*.template")
-            .pipe(
-                rename((p: any) => {
-                    p.extname = ".ts"
-                }),
-            )
-            .pipe(gulp.dest("./build/browser/src/platform"))
-=======
         return gulp.src("./src/platform/*.template")
             .pipe(rename((p) => { p.extname = '.ts'; }))
             .pipe(gulp.dest("./build/browser/src/platform"));
->>>>>>> master
     }
 
     @MergedTask()
     browserCompile() {
         const tsProject = ts.createProject("tsconfig.json", {
-<<<<<<< HEAD
-            module: "es2015",
-            lib: ["es5", "es6", "dom"],
-            typescript: require("typescript"),
-        })
-        const tsResult = gulp
-            .src([
-                "./build/browser/src/**/*.ts",
-                "./node_modules/reflect-metadata/**/*.d.ts",
-            ])
-=======
             module: "es2020",
             lib: ["es2021", "dom"],
             typescript: require("typescript")
@@ -125,7 +74,6 @@ export class Gulpfile {
             "./build/browser/src/**/*.ts",
             "./node_modules/reflect-metadata/**/*.d.ts"
         ])
->>>>>>> master
             .pipe(sourcemaps.init())
             .pipe(tsProject())
 
@@ -143,15 +91,10 @@ export class Gulpfile {
     }
 
     @Task()
-<<<<<<< HEAD
-    browserClearPackageDirectory(cb: Function) {
-        return del(["./build/browser/**"])
-=======
     async browserClearPackageDirectory() {
         return del([
             "./build/browser/**"
         ]);
->>>>>>> master
     }
 
     // -------------------------------------------------------------------------
@@ -264,15 +207,10 @@ export class Gulpfile {
      * Moves all compiled files to the final package directory.
      */
     @Task()
-<<<<<<< HEAD
-    packageClearPackageDirectory(cb: Function) {
-        return del(["build/package/src/**"], cb)
-=======
     async packageClearPackageDirectory() {
         return del([
             "build/package/src/**"
         ]);
->>>>>>> master
     }
 
     /**
