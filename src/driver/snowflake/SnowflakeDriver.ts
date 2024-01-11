@@ -603,7 +603,7 @@ export class SnowflakeDriver implements Driver {
 
                 // manually convert enum array to array of values (pg does not support, see https://github.com/brianc/node-pg-types/issues/56)
                 value = (value as string)
-                    .substr(1, (value as string).length - 2)
+                    .substring(1, (value as string).length - 1)
                     .split(",")
                     .map((val) => {
                         // replace double quotes from the beginning and from the end
