@@ -192,6 +192,9 @@
     "mysql2": {
       "optional": true
     },
+    "oracledb": {
+      "optional": true
+    },
     "pg": {
       "optional": true
     },
