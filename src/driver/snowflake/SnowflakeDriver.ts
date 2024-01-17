@@ -203,7 +203,7 @@ export class SnowflakeDriver implements Driver {
     /**
      * The prefix used for the parameters
      */
-    parametersPrefix: string = "$"
+    parametersPrefix: string = ":"
 
     /**
      * Default values of length, precision and scale depends on column data type.
