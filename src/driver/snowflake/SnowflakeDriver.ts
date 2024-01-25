@@ -721,6 +721,7 @@ export class SnowflakeDriver implements Driver {
      * Normalizes "default" value of the column.
      */
     normalizeDefault(columnMetadata: ColumnMetadata): string | undefined {
+        console.log("normalizeDefault: columnMetadata = ", columnMetadata)
         const defaultValue = columnMetadata.default
 
         if (defaultValue === null) {
