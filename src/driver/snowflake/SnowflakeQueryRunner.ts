@@ -113,7 +113,7 @@ export class SnowflakeQueryRunner
     ): Promise<any> {
         try {
             const databaseConnection = await this.driver.databaseConnection
-            databaseConnection.logger.logQuery(query, parameters)
+            databaseConnection.logger.logQuery(query, parameters, this)
             const executeQuery = new Promise((resolve, reject) =>
                 databaseConnection.execute({
                     sqlText: query,
