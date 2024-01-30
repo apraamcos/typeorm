@@ -275,6 +275,7 @@ export class PostgresDriver implements Driver {
         "timestamp without time zone": { precision: 6 },
         "timestamp with time zone": { precision: 6 },
     }
+    
 
     /**
      * Max length allowed by Postgres for aliases.
