@@ -325,14 +325,6 @@ export class SnowflakeDriver implements Driver {
         parameters: ObjectLiteral,
         nativeParameters: ObjectLiteral,
     ): [string, any[]] {
-        // console.log(
-        //     "\n typeorm - snowflake - escapeQueryWithParameters(): sql = ",
-        //     sql,
-        //     ", parameters = ",
-        //     parameters,
-        //     ", nativeParameters = ",
-        //     nativeParameters,
-        // )
         const escapedParameters: any[] = Object.keys(nativeParameters).map(
             (key) => nativeParameters[key],
         )
@@ -374,12 +366,7 @@ export class SnowflakeDriver implements Driver {
                 return this.createParameter(key, escapedParameters.length - 1)
             },
         ) // todo: make replace only in value statements, otherwise problems
-        // console.log(
-        //     "\n typeorm - snowflake - escapeQueryWithParameters() - end: sql = ",
-        //     sql,
-        //     ", escapedParameters = ",
-        //     escapedParameters,
-        // )
+
         return [sql, escapedParameters]
     }
     /**
