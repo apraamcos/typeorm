@@ -1172,6 +1172,8 @@ export class PostgresDriver implements Driver {
             throw new TypeORMError("Driver not Connected")
         }
 
+        console.log("I am obtainMasterConnection now")
+
         return new Promise((ok, fail) => {
             this.master.connect((err: any, connection: any, release: any) => {
                 err ? fail(err) : ok([connection, release])

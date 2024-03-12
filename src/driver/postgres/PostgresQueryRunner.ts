@@ -107,6 +107,7 @@ export class PostgresQueryRunner
                 })
         } else {
             // master
+            console.log("I am in connection now")
             this.databaseConnectionPromise = this.driver
                 .obtainMasterConnection()
                 .then(([connection, release]: any[]) => {
@@ -244,6 +245,8 @@ export class PostgresQueryRunner
         useStructuredResult: boolean = false,
     ): Promise<any> {
         if (this.isReleased) throw new QueryRunnerAlreadyReleasedError()
+
+        console.log("I am in query now")
 
         const databaseConnection = await this.connect()
         const broadcasterResult = new BroadcasterResult()
