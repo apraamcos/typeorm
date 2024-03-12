@@ -1174,7 +1174,7 @@ export class PostgresDriver implements Driver {
 
         console.log("I am obtainMasterConnection now")
 
-        const [connection, release] = await this.master.connect;
+        const [connection, release] = (await this.master.connect);
         // for (const client of (readerDriver as any).master._clients) {
         //     try {
         //       await client.query("SELECT 1");
