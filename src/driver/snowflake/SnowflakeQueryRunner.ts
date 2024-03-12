@@ -112,13 +112,8 @@ export class SnowflakeQueryRunner
         useStructuredResult: boolean = false,
     ): Promise<any> {
         try {
-            console.log(
-                "\n typeorm - snowflake - query(): query = ",
-                query,
-                ", parameters = ",
-                parameters,
-            )
             const databaseConnection = await this.driver.databaseConnection
+            this.driver.connection.logger.logQuery(query, parameters, this)
             const executeQuery = new Promise((resolve, reject) =>
                 databaseConnection.execute({
                     sqlText: query,
