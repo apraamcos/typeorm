@@ -1478,7 +1478,7 @@ export class PostgresDriver implements Driver {
                 database: credentials.database,
                 port: credentials.port,
                 ssl: credentials.ssl,
-                idleTimeoutMillis: options.idleTimeoutMillis,
+                idleTimeoutMillis: 20000,
                 connectionTimeoutMillis: options.connectTimeoutMS,
                 application_name:
                     options.applicationName ?? credentials.applicationName,

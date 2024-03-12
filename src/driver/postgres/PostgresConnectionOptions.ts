@@ -62,12 +62,6 @@ export interface PostgresConnectionOptions
      */
     readonly connectTimeoutMS?: number
 
-    /** number of milliseconds a client must sit idle in the pool and not be checked out
-     * before it is disconnected from the backend and discarded
-     * default is 10000 (10 seconds) - set to 0 to disable auto-disconnection of idle clients
-     */
-    readonly idleTimeoutMillis?: number
-
     /**
      * The Postgres extension to use to generate UUID columns. Defaults to uuid-ossp.
      * If pgcrypto is selected, TypeORM will use the gen_random_uuid() function from this extension.
