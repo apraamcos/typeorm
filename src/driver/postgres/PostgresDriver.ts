@@ -345,6 +345,14 @@ export class PostgresDriver implements Driver {
      */
     async connect(hardRefresh?: boolean): Promise<void> {
         console.log("connecting, hardRefresh: ", hardRefresh)
+        // do not use slave as it's bad design
+        if (hardRefresh) {
+           await this.master.end();
+           this.master = undefined;
+           this.schema = undefined;
+           this.database = undefined;
+           this.searchSchema = undefined;
+        }
         if (this.options.replication) {
             this.slaves = await Promise.all(
                 this.options.replication.slaves.map((slave) => {
@@ -360,7 +368,7 @@ export class PostgresDriver implements Driver {
             this.master = await this.createPool(this.options, this.options)
         }
 
-        if (hardRefresh || (!this.database || !this.searchSchema)) {
+        if (!this.database || !this.searchSchema) {
             const queryRunner = await this.createQueryRunner("master")
 
             if (hardRefresh || !this.database) {
@@ -374,7 +382,7 @@ export class PostgresDriver implements Driver {
             await queryRunner.release()
         }
 
-        if (hardRefresh || !this.schema) {
+        if (!this.schema) {
             this.schema = this.searchSchema
         }
     }
