@@ -1176,7 +1176,8 @@ export class PostgresDriver implements Driver {
 
         console.log("I am obtainMasterConnection now")
 
-        let hasError = true;
+        let hasError = Math.floor(Math.random() * 2) ? true : false;
+        console.log("hasError: ", hasError)
         for (const client of this.master._clients) {
             try {
               await client.query("SELECT 1");
