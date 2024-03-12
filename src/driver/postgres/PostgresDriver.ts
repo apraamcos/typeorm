@@ -343,7 +343,8 @@ export class PostgresDriver implements Driver {
      * Based on pooling options, it can either create connection immediately,
      * either create a pool and create connection when needed.
      */
-    async connect(): Promise<void> {
+    async connect(hardRefresh?: boolean): Promise<void> {
+        console.log("connecting, hardRefresh: ", hardRefresh)
         if (this.options.replication) {
             this.slaves = await Promise.all(
                 this.options.replication.slaves.map((slave) => {
@@ -355,24 +356,25 @@ export class PostgresDriver implements Driver {
                 this.options.replication.master,
             )
         } else {
+            console.log("I am here creating pool hoho")
             this.master = await this.createPool(this.options, this.options)
         }
 
-        if (!this.database || !this.searchSchema) {
+        if (hardRefresh || (!this.database || !this.searchSchema)) {
             const queryRunner = await this.createQueryRunner("master")
 
-            if (!this.database) {
+            if (hardRefresh || !this.database) {
                 this.database = await queryRunner.getCurrentDatabase()
             }
 
-            if (!this.searchSchema) {
+            if (hardRefresh || !this.searchSchema) {
                 this.searchSchema = await queryRunner.getCurrentSchema()
             }
 
             await queryRunner.release()
         }
 
-        if (!this.schema) {
+        if (hardRefresh || !this.schema) {
             this.schema = this.searchSchema
         }
     }
@@ -1174,19 +1176,30 @@ export class PostgresDriver implements Driver {
 
         console.log("I am obtainMasterConnection now")
 
-        const { connection, release } = await this.master.connect();
-        // for (const client of (readerDriver as any).master._clients) {
-        //     try {
-        //       await client.query("SELECT 1");
-        //       console.log(456);
-        //     } catch (error) {
-        //       console.log("Reconnecting ...");
-        //       await (readerDriver as any).master.connect();
-        //       console.log("client is reconnected");
-        //     }
-        //   }
+        let hasError = true;
+        for (const client of this.master._clients) {
+            try {
+              await client.query("SELECT 1");
+              console.log(456);
+            } catch (e) {
+              console.log("Not happy with SELECT 1")
+              console.log(e)
+              hasError = true;
+            }
+        }
+        
+        if (hasError) {
+            console.log("Has connection error!")
+            // reconnect if there's any issues
+            await this.connect(true);
+        }
+
         console.log("v2");
-        return [connection, release];
+        return new Promise((ok, fail) => {
+            this.master.connect((err: any, connection: any, release: any) => {
+                err ? fail(err) : ok([connection, release])
+            })
+        })
     }
 
     /**
