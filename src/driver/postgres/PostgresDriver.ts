@@ -1174,11 +1174,19 @@ export class PostgresDriver implements Driver {
 
         console.log("I am obtainMasterConnection now")
 
-        return new Promise((ok, fail) => {
-            this.master.connect((err: any, connection: any, release: any) => {
-                err ? fail(err) : ok([connection, release])
-            })
-        })
+        const [connection, release] = await this.master.connect;
+        // for (const client of (readerDriver as any).master._clients) {
+        //     try {
+        //       await client.query("SELECT 1");
+        //       console.log(456);
+        //     } catch (error) {
+        //       console.log("Reconnecting ...");
+        //       await (readerDriver as any).master.connect();
+        //       console.log("client is reconnected");
+        //     }
+        //   }
+        console.log("v2");
+        return [connection, release];
     }
 
     /**
