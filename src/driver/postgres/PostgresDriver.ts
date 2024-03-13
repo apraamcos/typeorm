@@ -1195,6 +1195,7 @@ export class PostgresDriver implements Driver {
               console.log("Not happy with SELECT 1")
               console.log(e)
               hasError = true;
+              break;
             }
         }
         
