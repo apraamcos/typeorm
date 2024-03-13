@@ -281,7 +281,6 @@ export class PostgresDriver implements Driver {
         "timestamp without time zone": { precision: 6 },
         "timestamp with time zone": { precision: 6 },
     }
-    
 
     /**
      * Max length allowed by Postgres for aliases.
@@ -347,13 +346,11 @@ export class PostgresDriver implements Driver {
         console.log("connecting, hardRefresh: ", hardRefresh)
         // do not use slave as it's bad design
         if (hardRefresh) {
-           try {
-            await this.master.end();
-           } catch {}
-           this.master = undefined;
-           this.schema = undefined;
-           this.database = undefined;
-           this.searchSchema = undefined;
+            await this.master.end()
+            this.master = undefined
+            this.schema = undefined
+            this.database = undefined
+            this.searchSchema = undefined
         }
         if (this.options.replication) {
             this.slaves = await Promise.all(
@@ -367,12 +364,7 @@ export class PostgresDriver implements Driver {
             )
         } else {
             console.log("I am here creating pool hoho")
-            try {
-                this.master = await this.createPool(this.options, this.options)
-            } catch (e) {
-                console.log("createPool Error!")
-                throw e
-            }
+            this.master = await this.attemptCreatePool.call(this, this.options)
         }
 
         if (!this.database || !this.searchSchema) {
@@ -391,6 +383,27 @@ export class PostgresDriver implements Driver {
 
         if (!this.schema) {
             this.schema = this.searchSchema
+        }
+    }
+
+    async attemptCreatePool(
+        options: PostgresConnectionOptions,
+        maxAttempts = 24,
+    ) {
+        let attempts = 0
+        while (attempts < maxAttempts) {
+            try {
+                return await this.createPool(options, options)
+            } catch (error) {
+                console.log("createPool error:", error)
+                attempts++
+                if (attempts === maxAttempts) {
+                    throw new Error(
+                        "Exceeded maximum number of attempts attemptCreatePool",
+                    )
+                }
+                await new Promise((resolve) => setTimeout(resolve, 5000))
+            }
         }
     }
 
@@ -1191,28 +1204,28 @@ export class PostgresDriver implements Driver {
 
         console.log("I am obtainMasterConnection now")
 
-        let hasError = false;
+        let hasError = false
         // let hasError = Math.floor(Math.random() * 2) ? true : false;
         console.log("hasError: ", hasError)
         for (const client of this.master._clients) {
             try {
-              await client.query("SELECT 1");
-              console.log(456);
+                await client.query("SELECT 1")
+                console.log(456)
             } catch (e) {
-              console.log("Not happy with SELECT 1")
-              console.log(e)
-              hasError = true;
-              break;
+                console.log("Not happy with SELECT 1")
+                console.log(e)
+                hasError = true
+                break
             }
         }
-        
+
         if (hasError) {
             console.log("Has connection error!")
             // reconnect if there's any issues
-            await this.connect(true);
+            await this.connect(true)
         }
 
-        console.log("v2");
+        console.log("v2")
         return new Promise((ok, fail) => {
             this.master.connect((err: any, connection: any, release: any) => {
                 err ? fail(err) : ok([connection, release])
