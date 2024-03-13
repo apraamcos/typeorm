@@ -21,3 +21,9 @@ export async function retry<T = any, E = any>(
         throw err
     }
 }
+
+export function sleep(ms: number): Promise<void> {
+    return new Promise<void>((ok) => {
+        setTimeout(ok, ms)
+    })
+}

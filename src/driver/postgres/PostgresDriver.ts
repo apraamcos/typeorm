@@ -28,8 +28,7 @@ import { View } from "../../schema-builder/view/View"
 import { TableForeignKey } from "../../schema-builder/table/TableForeignKey"
 import { InstanceChecker } from "../../util/InstanceChecker"
 import { UpsertType } from "../types/UpsertType"
-import { retry } from "../../util/Retry"
-import { sleep } from "../../../test/utils/test-utils"
+import { retry, sleep } from "../../util/Retry"
 
 /**
  * Organizes communication with PostgreSQL DBMS.
