@@ -27,6 +27,7 @@ import { MetadataTableType } from "../types/MetadataTableType"
 import { ReplicationMode } from "../types/ReplicationMode"
 import { PostgresDriver } from "./PostgresDriver"
 import { BroadcasterResult } from "../../subscriber/BroadcasterResult"
+import { retry, sleep } from "../../util/Retry"
 
 /**
  * Runs queries on a single postgres database connection.
@@ -108,29 +109,35 @@ export class PostgresQueryRunner
         } else {
             // master
             console.log("I am in connection now")
-            this.databaseConnectionPromise = this.driver
-                .obtainMasterConnection()
-                .then(([connection, release]: any[]) => {
-                    this.driver.connectedQueryRunners.push(this)
-                    this.databaseConnection = connection
+            this.databaseConnectionPromise = retry(
+                async () => {
+                    return this.driver
+                        .obtainMasterConnection()
+                        .then(([connection, release]: any[]) => {
+                            this.driver.connectedQueryRunners.push(this)
+                            this.databaseConnection = connection
 
-                    const onErrorCallback = (err: Error) =>
-                        this.releasePostgresConnection(err)
-                    this.releaseCallback = (err?: Error) => {
-                        this.databaseConnection.removeListener(
-                            "error",
-                            onErrorCallback,
-                        )
-                        release(err)
-                    }
-                    this.databaseConnection.on("error", onErrorCallback)
+                            const onErrorCallback = (err: Error) =>
+                                this.releasePostgresConnection(err)
+                            this.releaseCallback = (err?: Error) => {
+                                this.databaseConnection.removeListener(
+                                    "error",
+                                    onErrorCallback,
+                                )
+                                release(err)
+                            }
+                            this.databaseConnection.on("error", onErrorCallback)
 
-                    return this.databaseConnection
-                })
-                .catch((e) => {
-                    console.log("I am here in then!")
-                    throw e
-                })
+                            return this.databaseConnection
+                        })
+                },
+                async (err) => {
+                    console.log("retry obtainMasterConnection: " + err)
+                    await sleep(5000)
+                    return true
+                },
+                24,
+            )
         }
 
         return this.databaseConnectionPromise
