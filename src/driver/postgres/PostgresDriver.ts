@@ -367,7 +367,12 @@ export class PostgresDriver implements Driver {
             )
         } else {
             console.log("I am here creating pool hoho")
-            this.master = await this.createPool(this.options, this.options)
+            try {
+                this.master = await this.createPool(this.options, this.options)
+            } catch (e) {
+                console.log("createPool Error!")
+                throw e
+            }
         }
 
         if (!this.database || !this.searchSchema) {

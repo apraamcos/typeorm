@@ -127,6 +127,10 @@ export class PostgresQueryRunner
 
                     return this.databaseConnection
                 })
+                .catch((e) => {
+                    console.log("I am here in then!")
+                    throw e
+                })
         }
 
         return this.databaseConnectionPromise
