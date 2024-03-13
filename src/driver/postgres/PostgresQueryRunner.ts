@@ -141,39 +141,38 @@ export class PostgresQueryRunner
         let attempts = 0
 
         while (attempts < retries) {
-            this.databaseConnectionPromise = this.driver
-                .obtainMasterConnection()
-                .then(([connection, release]: any[]) => {
-                    this.driver.connectedQueryRunners.push(this)
-                    this.databaseConnection = connection
+            try {
+                const [connection, release] =
+                    await this.driver.obtainMasterConnection()
+                this.driver.connectedQueryRunners.push(this)
+                this.databaseConnection = connection
 
-                    const onErrorCallback = (err: Error) =>
-                        this.releasePostgresConnection(err)
-                    this.releaseCallback = (err?: Error) => {
-                        this.databaseConnection.removeListener(
-                            "error",
-                            onErrorCallback,
-                        )
-                        release(err)
-                    }
-                    this.databaseConnection.on("error", onErrorCallback)
-
-                    return this.databaseConnection
-                })
-                .catch(async (error) => {
-                    console.log("Connection attempt failed:", error.message)
-                    attempts++
-
-                    if (attempts === retries) {
-                        throw new Error(
-                            "Exceeded maximum number of connection attempts connectWithRetry",
-                        )
-                    }
-
-                    await new Promise((resolve) =>
-                        setTimeout(resolve, retryInterval),
+                const onErrorCallback = (err: Error) =>
+                    this.releasePostgresConnection(err)
+                this.releaseCallback = (err?: Error) => {
+                    this.databaseConnection.removeListener(
+                        "error",
+                        onErrorCallback,
                     )
-                })
+                    release(err)
+                }
+                this.databaseConnection.on("error", onErrorCallback)
+
+                return this.databaseConnection
+            } catch (error) {
+                console.log("Connection attempt failed:", error.message)
+                attempts++
+
+                if (attempts === retries) {
+                    throw new Error(
+                        "Exceeded maximum number of connection attempts connectWithRetry",
+                    )
+                }
+
+                await new Promise((resolve) =>
+                    setTimeout(resolve, retryInterval),
+                )
+            }
         }
     }
 
