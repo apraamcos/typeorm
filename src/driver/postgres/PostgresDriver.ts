@@ -28,6 +28,8 @@ import { View } from "../../schema-builder/view/View"
 import { TableForeignKey } from "../../schema-builder/table/TableForeignKey"
 import { InstanceChecker } from "../../util/InstanceChecker"
 import { UpsertType } from "../types/UpsertType"
+import { retry } from "../../util/Retry"
+import { sleep } from "../../../test/utils/test-utils"
 
 /**
  * Organizes communication with PostgreSQL DBMS.
@@ -364,7 +366,17 @@ export class PostgresDriver implements Driver {
             )
         } else {
             console.log("I am here creating pool hoho")
-            this.master = await this.attemptCreatePool.call(this, this.options)
+            this.master = await retry(
+                async () => {
+                    return await this.createPool(this.options, this.options)
+                },
+                async (err) => {
+                    console.log("retry creating pool: " + err)
+                    await sleep(5000)
+                    return true
+                },
+                24,
+            )
         }
 
         if (!this.database || !this.searchSchema) {
@@ -383,27 +395,6 @@ export class PostgresDriver implements Driver {
 
         if (!this.schema) {
             this.schema = this.searchSchema
-        }
-    }
-
-    async attemptCreatePool(
-        options: PostgresConnectionOptions,
-        maxAttempts = 24,
-    ) {
-        let attempts = 0
-        while (attempts < maxAttempts) {
-            try {
-                return await this.createPool(options, options)
-            } catch (error) {
-                console.log("createPool error:", error)
-                attempts++
-                if (attempts === maxAttempts) {
-                    throw new Error(
-                        "Exceeded maximum number of attempts attemptCreatePool",
-                    )
-                }
-                await new Promise((resolve) => setTimeout(resolve, 5000))
-            }
         }
     }
 

@@ -108,72 +108,32 @@ export class PostgresQueryRunner
         } else {
             // master
             console.log("I am in connection now")
-            this.databaseConnectionPromise = this.connectWithRetry()
-            // this.databaseConnectionPromise = this.driver
-            //     .obtainMasterConnection()
-            //     .then(([connection, release]: any[]) => {
-            //         this.driver.connectedQueryRunners.push(this)
-            //         this.databaseConnection = connection
+            this.databaseConnectionPromise = this.driver
+                .obtainMasterConnection()
+                .then(([connection, release]: any[]) => {
+                    this.driver.connectedQueryRunners.push(this)
+                    this.databaseConnection = connection
 
-            //         const onErrorCallback = (err: Error) =>
-            //             this.releasePostgresConnection(err)
-            //         this.releaseCallback = (err?: Error) => {
-            //             this.databaseConnection.removeListener(
-            //                 "error",
-            //                 onErrorCallback,
-            //             )
-            //             release(err)
-            //         }
-            //         this.databaseConnection.on("error", onErrorCallback)
+                    const onErrorCallback = (err: Error) =>
+                        this.releasePostgresConnection(err)
+                    this.releaseCallback = (err?: Error) => {
+                        this.databaseConnection.removeListener(
+                            "error",
+                            onErrorCallback,
+                        )
+                        release(err)
+                    }
+                    this.databaseConnection.on("error", onErrorCallback)
 
-            //         return this.databaseConnection
-            //     })
-            //     .catch((e) => {
-            //         console.log("I am here in then!")
-            //         throw e
-            //     })
+                    return this.databaseConnection
+                })
+                .catch((e) => {
+                    console.log("I am here in then!")
+                    throw e
+                })
         }
 
         return this.databaseConnectionPromise
-    }
-
-    private async connectWithRetry(retries = 24, retryInterval = 5000) {
-        let attempts = 0
-
-        while (attempts < retries) {
-            try {
-                const [connection, release] =
-                    await this.driver.obtainMasterConnection()
-                this.driver.connectedQueryRunners.push(this)
-                this.databaseConnection = connection
-
-                const onErrorCallback = (err: Error) =>
-                    this.releasePostgresConnection(err)
-                this.releaseCallback = (err?: Error) => {
-                    this.databaseConnection.removeListener(
-                        "error",
-                        onErrorCallback,
-                    )
-                    release(err)
-                }
-                this.databaseConnection.on("error", onErrorCallback)
-
-                return this.databaseConnection
-            } catch (error) {
-                console.log("Connection attempt failed:", error.message)
-                attempts++
-
-                if (attempts === retries) {
-                    throw new Error(
-                        "Exceeded maximum number of connection attempts connectWithRetry",
-                    )
-                }
-
-                await new Promise((resolve) =>
-                    setTimeout(resolve, retryInterval),
-                )
-            }
-        }
     }
 
     /**
