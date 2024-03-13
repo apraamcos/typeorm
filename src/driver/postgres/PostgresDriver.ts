@@ -347,7 +347,9 @@ export class PostgresDriver implements Driver {
         console.log("connecting, hardRefresh: ", hardRefresh)
         // do not use slave as it's bad design
         if (hardRefresh) {
-           await this.master.end();
+           try {
+            await this.master.end();
+           } catch {}
            this.master = undefined;
            this.schema = undefined;
            this.database = undefined;
