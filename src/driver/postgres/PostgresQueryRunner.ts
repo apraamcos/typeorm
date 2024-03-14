@@ -109,35 +109,25 @@ export class PostgresQueryRunner
         } else {
             // master
             console.log("I am in connection now")
-            this.databaseConnectionPromise = retry(
-                async () => {
-                    return this.driver
-                        .obtainMasterConnection()
-                        .then(([connection, release]: any[]) => {
-                            this.driver.connectedQueryRunners.push(this)
-                            this.databaseConnection = connection
+            this.databaseConnectionPromise = this.driver
+                .obtainMasterConnection()
+                .then(([connection, release]: any[]) => {
+                    this.driver.connectedQueryRunners.push(this)
+                    this.databaseConnection = connection
 
-                            const onErrorCallback = (err: Error) =>
-                                this.releasePostgresConnection(err)
-                            this.releaseCallback = (err?: Error) => {
-                                this.databaseConnection.removeListener(
-                                    "error",
-                                    onErrorCallback,
-                                )
-                                release(err)
-                            }
-                            this.databaseConnection.on("error", onErrorCallback)
+                    const onErrorCallback = (err: Error) =>
+                        this.releasePostgresConnection(err)
+                    this.releaseCallback = (err?: Error) => {
+                        this.databaseConnection.removeListener(
+                            "error",
+                            onErrorCallback,
+                        )
+                        release(err)
+                    }
+                    this.databaseConnection.on("error", onErrorCallback)
 
-                            return this.databaseConnection
-                        })
-                },
-                async (err) => {
-                    console.log("retry obtainMasterConnection: " + err)
-                    await sleep(5000)
-                    return true
-                },
-                24,
-            )
+                    return this.databaseConnection
+                })
         }
 
         return this.databaseConnectionPromise
@@ -259,7 +249,17 @@ export class PostgresQueryRunner
 
         console.log("I am in query now")
 
-        const databaseConnection = await this.connect()
+        const databaseConnection = await retry(
+            async () => {
+                return await this.connect()
+            },
+            async (err) => {
+                console.log("retry query connect: " + err)
+                await sleep(5000)
+                return true
+            },
+            24,
+        )
         const broadcasterResult = new BroadcasterResult()
 
         this.driver.connection.logger.logQuery(query, parameters, this)
@@ -360,7 +360,17 @@ export class PostgresQueryRunner
         const QueryStream = this.driver.loadStreamDependency()
         if (this.isReleased) throw new QueryRunnerAlreadyReleasedError()
 
-        const databaseConnection = await this.connect()
+        const databaseConnection = await retry(
+            async () => {
+                return await this.connect()
+            },
+            async (err) => {
+                console.log("retry stream connect: " + err)
+                await sleep(5000)
+                return true
+            },
+            24,
+        )
         this.driver.connection.logger.logQuery(query, parameters, this)
         const stream = databaseConnection.query(
             new QueryStream(query, parameters),
