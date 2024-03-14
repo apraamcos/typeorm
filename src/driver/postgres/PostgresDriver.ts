@@ -372,7 +372,7 @@ export class PostgresDriver implements Driver {
                     return await this.createPool(this.options, this.options)
                 },
                 async (err) => {
-                    console.log("retry creating pool: " + err)
+                    console.log("retry creating pool")
                     await sleep(5000)
                     return true
                 },
@@ -1205,7 +1205,6 @@ export class PostgresDriver implements Driver {
                 console.log(456)
             } catch (e) {
                 console.log("Not happy with SELECT 1")
-                console.log(e)
                 hasError = true
                 break
             }

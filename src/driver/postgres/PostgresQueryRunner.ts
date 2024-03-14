@@ -254,7 +254,7 @@ export class PostgresQueryRunner
                 return await this.connect()
             },
             async (err) => {
-                console.log("retry query connect: " + err)
+                console.log("retry query connect")
                 await sleep(5000)
                 return true
             },
@@ -365,7 +365,7 @@ export class PostgresQueryRunner
                 return await this.connect()
             },
             async (err) => {
-                console.log("retry stream connect: " + err)
+                console.log("retry stream connect")
                 await sleep(5000)
                 return true
             },
