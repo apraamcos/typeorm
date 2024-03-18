@@ -1536,6 +1536,9 @@ export class PostgresDriver implements Driver {
                 release()
                 ok(pool)
             })
+        }).catch((e) => {
+            console.log(`ABCF1 Create pool error`, e);
+            throw e;
         })
     }
 

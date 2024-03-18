@@ -125,6 +125,9 @@ export class PostgresQueryRunner
                     this.databaseConnection.on("error", onErrorCallback)
 
                     return this.databaseConnection
+                }).catch((e) => {
+                    console.log(`ABCF2 I am in query runner connection error: `, e);
+                    throw e;
                 })
         }
 
@@ -312,6 +315,7 @@ export class PostgresQueryRunner
 
             return result
         } catch (err) {
+            console.log(`ABCF3 I am in query runner: `, err)
             this.driver.connection.logger.logQueryError(
                 err,
                 query,
