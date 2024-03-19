@@ -110,12 +110,12 @@ export class PostgresQueryRunner
             // master
             this.databaseConnectionPromise = this.driver
                 .obtainMasterConnection(reconnect)
-                .then(([connection, release]: any[]) => {
+                .then(async ([connection, release]: any[]) => {
                     this.driver.connectedQueryRunners.push(this)
                     this.databaseConnection = connection
 
-                    const onErrorCallback = (err: Error) => {
-                        return this.releasePostgresConnection(err)
+                    const onErrorCallback = async (err: Error) => {
+                        return await this.releasePostgresConnection(err)
                     }
                     this.releaseCallback = (err?: Error) => {
                         this.databaseConnection.removeListener(
