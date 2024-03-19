@@ -27,7 +27,6 @@ import { MetadataTableType } from "../types/MetadataTableType"
 import { ReplicationMode } from "../types/ReplicationMode"
 import { PostgresDriver } from "./PostgresDriver"
 import { BroadcasterResult } from "../../subscriber/BroadcasterResult"
-import { retry } from "./retry"
 import { sleep } from "../../../test/utils/test-utils"
 
 /**
