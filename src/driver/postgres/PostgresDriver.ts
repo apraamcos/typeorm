@@ -345,7 +345,7 @@ export class PostgresDriver implements Driver {
     async connect(reconnect?: boolean): Promise<void> {
         if (reconnect) {
             try {
-                await this.closePool(this.master)
+                await this.disconnect()
             } catch {}
             this.master = undefined
             this.database = undefined
