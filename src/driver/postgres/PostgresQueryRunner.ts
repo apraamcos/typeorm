@@ -27,7 +27,7 @@ import { MetadataTableType } from "../types/MetadataTableType"
 import { ReplicationMode } from "../types/ReplicationMode"
 import { PostgresDriver } from "./PostgresDriver"
 import { BroadcasterResult } from "../../subscriber/BroadcasterResult"
-import { sleep } from "../../../test/utils/test-utils"
+import { sleep } from "./sleep"
 
 /**
  * Runs queries on a single postgres database connection.
@@ -127,13 +127,17 @@ export class PostgresQueryRunner
                     this.databaseConnection.on("error", onErrorCallback)
 
                     return this.databaseConnection
-                }).catch((err) => {
-                    console.log(`ABCF2 I am in query runner connection error: `, err);
+                })
+                .catch((err) => {
+                    console.log(
+                        `ABCF2 I am in query runner connection error: `,
+                        err,
+                    )
                     console.log(err.message)
                     console.log(err.name)
                     console.log(err.code)
                     console.log(JSON.stringify(err))
-                    throw err;
+                    throw err
                 })
         }
 
@@ -251,7 +255,7 @@ export class PostgresQueryRunner
         query: string,
         parameters?: any[],
         useStructuredResult: boolean = false,
-        reconnect?: boolean
+        reconnect?: boolean,
     ): Promise<any> {
         if (this.isReleased) throw new QueryRunnerAlreadyReleasedError()
 
@@ -268,8 +272,8 @@ export class PostgresQueryRunner
         try {
             const queryStartTime = +new Date()
 
-            const raw = await databaseConnection.query(query, parameters);
-            
+            const raw = await databaseConnection.query(query, parameters)
+
             // log slow queries if maxQueryExecution time is set
             const maxQueryExecutionTime =
                 this.driver.options.maxQueryExecutionTime
@@ -326,14 +330,26 @@ export class PostgresQueryRunner
         } catch (err) {
             console.log(`5555, `, err)
             if (err.message === "Connection terminated unexpectedly") {
-                console.log("Connection terminated unexpectedly");
-                return await this.query(query, parameters, useStructuredResult, true)
-            } else if (err.code === "ECONNREFUSED" 
-                || err.message === "the database system is in recovery mode"
-                || err.message === "the database system is starting up") {
-                console.log("Database down");
-                await sleep(5000);
-                return await this.query(query, parameters, useStructuredResult, true)
+                console.log("Connection terminated unexpectedly")
+                return await this.query(
+                    query,
+                    parameters,
+                    useStructuredResult,
+                    true,
+                )
+            } else if (
+                err.code === "ECONNREFUSED" ||
+                err.message === "the database system is in recovery mode" ||
+                err.message === "the database system is starting up"
+            ) {
+                console.log("Database down")
+                await sleep(5000)
+                return await this.query(
+                    query,
+                    parameters,
+                    useStructuredResult,
+                    true,
+                )
             }
             this.driver.connection.logger.logQueryError(
                 err,
@@ -624,10 +640,22 @@ export class PostgresQueryRunner
                 downQueries.push(this.dropIndexSql(table, index))
             })
         }
-        
+
         if (table.comment) {
-            upQueries.push(new Query("COMMENT ON TABLE " + this.escapePath(table) + " IS '" + table.comment + "'"));
-            downQueries.push(new Query("COMMENT ON TABLE " + this.escapePath(table) + " IS NULL"));
+            upQueries.push(
+                new Query(
+                    "COMMENT ON TABLE " +
+                        this.escapePath(table) +
+                        " IS '" +
+                        table.comment +
+                        "'",
+                ),
+            )
+            downQueries.push(
+                new Query(
+                    "COMMENT ON TABLE " + this.escapePath(table) + " IS NULL",
+                ),
+            )
         }
 
         await this.executeQueries(upQueries, downQueries)
@@ -963,7 +991,7 @@ export class PostgresQueryRunner
         const enumColumns = newTable.columns.filter(
             (column) => column.type === "enum" || column.type === "simple-enum",
         )
-        for (let column of enumColumns) {
+        for (const column of enumColumns) {
             // skip renaming for user-defined enum name
             if (column.enumName) continue
 
@@ -4767,7 +4795,7 @@ export class PostgresQueryRunner
 
         newComment = this.escapeComment(newComment)
         const comment = this.escapeComment(table.comment)
-        
+
         if (newComment === comment) {
             return
         }
