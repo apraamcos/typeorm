@@ -27,6 +27,8 @@ import { MetadataTableType } from "../types/MetadataTableType"
 import { ReplicationMode } from "../types/ReplicationMode"
 import { PostgresDriver } from "./PostgresDriver"
 import { BroadcasterResult } from "../../subscriber/BroadcasterResult"
+import { retry } from "./retry"
+import { sleep } from "../../../test/utils/test-utils"
 
 /**
  * Runs queries on a single postgres database connection.
@@ -78,7 +80,7 @@ export class PostgresQueryRunner
      * Creates/uses database connection from the connection pool to perform further operations.
      * Returns obtained database connection.
      */
-    connect(): Promise<any> {
+    connect(reconnect?: boolean): Promise<any> {
         if (this.databaseConnection)
             return Promise.resolve(this.databaseConnection)
 
@@ -108,20 +110,15 @@ export class PostgresQueryRunner
         } else {
             // master
             this.databaseConnectionPromise = this.driver
-                .obtainMasterConnection()
+                .obtainMasterConnection(reconnect)
                 .then(([connection, release]: any[]) => {
                     this.driver.connectedQueryRunners.push(this)
                     this.databaseConnection = connection
 
                     const onErrorCallback = (err: Error) => {
-                        console.log("ACB1", err)
-                        console.log("ACB1", err.name)
-                        console.log("ACB1", err.message)
-                        console.log("ACB1", JSON.stringify(err))
                         return this.releasePostgresConnection(err)
                     }
                     this.releaseCallback = (err?: Error) => {
-                        console.log("ACB2", JSON.stringify(err))
                         this.databaseConnection.removeListener(
                             "error",
                             onErrorCallback,
@@ -255,10 +252,11 @@ export class PostgresQueryRunner
         query: string,
         parameters?: any[],
         useStructuredResult: boolean = false,
+        reconnect?: boolean
     ): Promise<any> {
         if (this.isReleased) throw new QueryRunnerAlreadyReleasedError()
 
-        const databaseConnection = await this.connect()
+        const databaseConnection = await this.connect(reconnect)
         const broadcasterResult = new BroadcasterResult()
 
         this.driver.connection.logger.logQuery(query, parameters, this)
@@ -270,7 +268,9 @@ export class PostgresQueryRunner
 
         try {
             const queryStartTime = +new Date()
-            const raw = await databaseConnection.query(query, parameters)
+
+            const raw = await databaseConnection.query(query, parameters);
+            
             // log slow queries if maxQueryExecution time is set
             const maxQueryExecutionTime =
                 this.driver.options.maxQueryExecutionTime
@@ -325,11 +325,17 @@ export class PostgresQueryRunner
 
             return result
         } catch (err) {
-            console.log(`ABCF3 I am in query runner: `, err)
-            console.log(err.message)
-            console.log(err.name)
-            console.log(err.code)
-            console.log(JSON.stringify(err))
+            console.log(`5555, `, err)
+            if (err.message === "Connection terminated unexpectedly") {
+                console.log("Connection terminated unexpectedly");
+                return await this.query(query, parameters, useStructuredResult, true)
+            } else if (err.code === "ECONNREFUSED" 
+                || err.message === "the database system is in recovery mode"
+                || err.message === "the database system is starting up") {
+                console.log("Database down");
+                await sleep(5000);
+                return await this.query(query, parameters, useStructuredResult, true)
+            }
             this.driver.connection.logger.logQueryError(
                 err,
                 query,
