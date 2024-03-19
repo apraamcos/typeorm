@@ -278,6 +278,7 @@ export class PostgresQueryRunner
 
             const raw = await databaseConnection.query(query, parameters)
 
+            console.log("get raw")
             // log slow queries if maxQueryExecution time is set
             const maxQueryExecutionTime =
                 this.driver.options.maxQueryExecutionTime
@@ -293,6 +294,8 @@ export class PostgresQueryRunner
                 raw,
                 undefined,
             )
+
+            console.log("after broadcastAfterQueryEvent")
 
             if (
                 maxQueryExecutionTime &&
@@ -330,6 +333,7 @@ export class PostgresQueryRunner
                 }
             }
 
+            console.log("get result!", result)
             return result
         } catch (err) {
             console.log(`AGH1A, `, err)
@@ -347,7 +351,7 @@ export class PostgresQueryRunner
                 err.message === "the database system is in recovery mode" ||
                 err.message === "the database system is starting up"
             ) {
-                console.log("Database down")
+                console.log(err.message)
                 await sleep(5000)
                 return await this.query(
                     query,
