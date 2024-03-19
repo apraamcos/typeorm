@@ -125,7 +125,7 @@ export class PostgresQueryRunner
                     }
                     this.databaseConnection.on("error", onErrorCallback)
 
-                    return [this.databaseConnection, release]
+                    return this.databaseConnection
                 })
         }
 
@@ -251,10 +251,8 @@ export class PostgresQueryRunner
 
         // const broadcasterResult = new BroadcasterResult()
 
-        let release: any
         try {
-            const [databaseConnection, connectionRelease] = await this.connect()
-            release = connectionRelease
+            const databaseConnection = await this.connect(reconnect)
 
             // this.broadcaster.broadcastBeforeQueryEvent(
             //     broadcasterResult,
@@ -326,11 +324,6 @@ export class PostgresQueryRunner
             console.log("get result!", result)
             return result
         } catch (err) {
-            if (release) {
-                try {
-                    await release(true)
-                } catch {}
-            }
             console.log(`AGH1A, `, err)
             if (err.message === "Connection terminated unexpectedly") {
                 console.log(err.message)
@@ -389,7 +382,7 @@ export class PostgresQueryRunner
         const QueryStream = this.driver.loadStreamDependency()
         if (this.isReleased) throw new QueryRunnerAlreadyReleasedError()
 
-        const [databaseConnection] = await this.connect()
+        const databaseConnection = await this.connect()
         this.driver.connection.logger.logQuery(query, parameters, this)
         const stream = databaseConnection.query(
             new QueryStream(query, parameters),
