@@ -330,7 +330,7 @@ export class PostgresQueryRunner
 
             return result
         } catch (err) {
-            console.log(`5555, `, err)
+            console.log(`AGH1A, `, err)
             if (err.message === "Connection terminated unexpectedly") {
                 console.log("Connection terminated unexpectedly")
                 return await this.query(
