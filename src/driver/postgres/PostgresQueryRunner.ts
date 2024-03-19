@@ -113,9 +113,15 @@ export class PostgresQueryRunner
                     this.driver.connectedQueryRunners.push(this)
                     this.databaseConnection = connection
 
-                    const onErrorCallback = (err: Error) =>
-                        this.releasePostgresConnection(err)
+                    const onErrorCallback = (err: Error) => {
+                        console.log("ACB1", err)
+                        console.log("ACB1", err.name)
+                        console.log("ACB1", err.message)
+                        console.log("ACB1", JSON.stringify(err))
+                        return this.releasePostgresConnection(err)
+                    }
                     this.releaseCallback = (err?: Error) => {
+                        console.log("ACB2", JSON.stringify(err))
                         this.databaseConnection.removeListener(
                             "error",
                             onErrorCallback,
@@ -125,9 +131,13 @@ export class PostgresQueryRunner
                     this.databaseConnection.on("error", onErrorCallback)
 
                     return this.databaseConnection
-                }).catch((e) => {
-                    console.log(`ABCF2 I am in query runner connection error: `, e);
-                    throw e;
+                }).catch((err) => {
+                    console.log(`ABCF2 I am in query runner connection error: `, err);
+                    console.log(err.message)
+                    console.log(err.name)
+                    console.log(err.code)
+                    console.log(JSON.stringify(err))
+                    throw err;
                 })
         }
 
@@ -316,6 +326,10 @@ export class PostgresQueryRunner
             return result
         } catch (err) {
             console.log(`ABCF3 I am in query runner: `, err)
+            console.log(err.message)
+            console.log(err.name)
+            console.log(err.code)
+            console.log(JSON.stringify(err))
             this.driver.connection.logger.logQueryError(
                 err,
                 query,
