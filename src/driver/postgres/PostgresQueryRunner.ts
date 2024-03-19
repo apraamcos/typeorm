@@ -128,17 +128,17 @@ export class PostgresQueryRunner
 
                     return this.databaseConnection
                 })
-                .catch((err) => {
-                    console.log(
-                        `ABCF2 I am in query runner connection error: `,
-                        err,
-                    )
-                    console.log(err.message)
-                    console.log(err.name)
-                    console.log(err.code)
-                    console.log(JSON.stringify(err))
-                    throw err
-                })
+            // .catch((err) => {
+            //     console.log(
+            //         `ABCF2 I am in query runner connection error: `,
+            //         err,
+            //     )
+            //     console.log(err.message)
+            //     console.log(err.name)
+            //     console.log(err.code)
+            //     console.log(JSON.stringify(err))
+            //     throw err
+            // })
         }
 
         return this.databaseConnectionPromise
@@ -262,14 +262,15 @@ export class PostgresQueryRunner
         // }
 
         const broadcasterResult = new BroadcasterResult()
-        this.broadcaster.broadcastBeforeQueryEvent(
-            broadcasterResult,
-            query,
-            parameters,
-        )
 
         try {
             const databaseConnection = await this.connect(reconnect)
+
+            this.broadcaster.broadcastBeforeQueryEvent(
+                broadcasterResult,
+                query,
+                parameters,
+            )
 
             this.driver.connection.logger.logQuery(query, parameters, this)
 

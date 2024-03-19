@@ -347,6 +347,7 @@ export class PostgresDriver implements Driver {
             try {
                 await this.master.end()
             } catch {}
+            this.master = undefined
             this.database = undefined
             this.searchSchema = undefined
             this.schema = undefined
@@ -389,6 +390,7 @@ export class PostgresDriver implements Driver {
      */
     async afterConnect(): Promise<void> {
         const extensionsMetadata = await this.checkMetadataForExtensions()
+        console.log("I am in use")
         const [connection, release] = await this.obtainMasterConnection()
 
         const installExtensions =
