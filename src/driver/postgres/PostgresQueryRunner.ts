@@ -26,7 +26,6 @@ import { IsolationLevel } from "../types/IsolationLevel"
 import { MetadataTableType } from "../types/MetadataTableType"
 import { ReplicationMode } from "../types/ReplicationMode"
 import { PostgresDriver } from "./PostgresDriver"
-import { BroadcasterResult } from "../../subscriber/BroadcasterResult"
 import { sleep } from "./sleep"
 
 /**
@@ -261,16 +260,16 @@ export class PostgresQueryRunner
         //     throw new QueryRunnerAlreadyReleasedError()
         // }
 
-        const broadcasterResult = new BroadcasterResult()
+        // const broadcasterResult = new BroadcasterResult()
 
         try {
             const databaseConnection = await this.connect(reconnect)
 
-            this.broadcaster.broadcastBeforeQueryEvent(
-                broadcasterResult,
-                query,
-                parameters,
-            )
+            // this.broadcaster.broadcastBeforeQueryEvent(
+            //     broadcasterResult,
+            //     query,
+            //     parameters,
+            // )
 
             this.driver.connection.logger.logQuery(query, parameters, this)
 
@@ -285,15 +284,15 @@ export class PostgresQueryRunner
             const queryEndTime = +new Date()
             const queryExecutionTime = queryEndTime - queryStartTime
 
-            this.broadcaster.broadcastAfterQueryEvent(
-                broadcasterResult,
-                query,
-                parameters,
-                true,
-                queryExecutionTime,
-                raw,
-                undefined,
-            )
+            // this.broadcaster.broadcastAfterQueryEvent(
+            //     broadcasterResult,
+            //     query,
+            //     parameters,
+            //     true,
+            //     queryExecutionTime,
+            //     raw,
+            //     undefined,
+            // )
 
             console.log("after broadcastAfterQueryEvent")
 
@@ -366,19 +365,19 @@ export class PostgresQueryRunner
                 parameters,
                 this,
             )
-            this.broadcaster.broadcastAfterQueryEvent(
-                broadcasterResult,
-                query,
-                parameters,
-                false,
-                undefined,
-                undefined,
-                err,
-            )
+            // this.broadcaster.broadcastAfterQueryEvent(
+            //     broadcasterResult,
+            //     query,
+            //     parameters,
+            //     false,
+            //     undefined,
+            //     undefined,
+            //     err,
+            // )
 
             throw new QueryFailedError(query, parameters, err)
         } finally {
-            await broadcasterResult.wait()
+            // await broadcasterResult.wait()
         }
     }
 
