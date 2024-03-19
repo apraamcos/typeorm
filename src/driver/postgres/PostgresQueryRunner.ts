@@ -257,7 +257,9 @@ export class PostgresQueryRunner
         useStructuredResult: boolean = false,
         reconnect?: boolean,
     ): Promise<any> {
-        if (this.isReleased) throw new QueryRunnerAlreadyReleasedError()
+        if (this.isReleased && !reconnect) {
+            throw new QueryRunnerAlreadyReleasedError()
+        }
 
         const databaseConnection = await this.connect(reconnect)
         const broadcasterResult = new BroadcasterResult()
