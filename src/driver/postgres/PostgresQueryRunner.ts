@@ -261,10 +261,7 @@ export class PostgresQueryRunner
         //     throw new QueryRunnerAlreadyReleasedError()
         // }
 
-        const databaseConnection = await this.connect(reconnect)
         const broadcasterResult = new BroadcasterResult()
-
-        this.driver.connection.logger.logQuery(query, parameters, this)
         this.broadcaster.broadcastBeforeQueryEvent(
             broadcasterResult,
             query,
@@ -272,6 +269,10 @@ export class PostgresQueryRunner
         )
 
         try {
+            const databaseConnection = await this.connect(reconnect)
+
+            this.driver.connection.logger.logQuery(query, parameters, this)
+
             const queryStartTime = +new Date()
 
             const raw = await databaseConnection.query(query, parameters)
