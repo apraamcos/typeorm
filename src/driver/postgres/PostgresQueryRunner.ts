@@ -329,7 +329,7 @@ export class PostgresQueryRunner
             return result
         } catch (err) {
             if (release) {
-                await release()
+                await release(true)
             }
             console.log(`AGH1A, `, err)
             if (err.message === "Connection terminated unexpectedly") {
