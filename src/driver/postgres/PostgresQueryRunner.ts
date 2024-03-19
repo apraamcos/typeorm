@@ -92,8 +92,8 @@ export class PostgresQueryRunner
                     this.driver.connectedQueryRunners.push(this)
                     this.databaseConnection = connection
 
-                    const onErrorCallback = (err: Error) =>
-                        this.releasePostgresConnection(err)
+                    const onErrorCallback = async (err: Error) =>
+                        await this.releasePostgresConnection(err)
                     this.releaseCallback = (err?: Error) => {
                         this.databaseConnection.removeListener(
                             "error",
@@ -158,8 +158,8 @@ export class PostgresQueryRunner
      * Releases used database connection.
      * You cannot use query runner methods once its released.
      */
-    release(): Promise<void> {
-        return this.releasePostgresConnection()
+    async release(): Promise<void> {
+        return await this.releasePostgresConnection()
     }
 
     /**
@@ -327,7 +327,9 @@ export class PostgresQueryRunner
             return result
         } catch (err) {
             if (release) {
-                await release(true)
+                try {
+                    await release(true)
+                } catch {}
             }
             console.log(`AGH1A, `, err)
             if (err.message === "Connection terminated unexpectedly") {
