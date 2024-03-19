@@ -345,11 +345,11 @@ export class PostgresDriver implements Driver {
     async connect(reconnect?: boolean): Promise<void> {
         if (reconnect) {
             try {
-                await this.master.end();
+                await this.master.end()
             } catch {}
-            this.database = undefined;
-            this.searchSchema = undefined;
-            this.schema = undefined;
+            this.database = undefined
+            this.searchSchema = undefined
+            this.schema = undefined
         }
         if (this.options.replication) {
             this.slaves = await Promise.all(
@@ -861,7 +861,7 @@ export class PostgresDriver implements Driver {
                     return this.parametersPrefix + parameterIndexMap.get(key)
                 }
 
-                let value: any = parameters[key]
+                const value: any = parameters[key]
 
                 if (isArray) {
                     return value
@@ -899,7 +899,7 @@ export class PostgresDriver implements Driver {
      * E.g. myDB.mySchema.myTable
      */
     buildTableName(tableName: string, schema?: string): string {
-        let tablePath = [tableName]
+        const tablePath = [tableName]
 
         if (schema) {
             tablePath.unshift(schema)
@@ -1174,9 +1174,11 @@ export class PostgresDriver implements Driver {
      * Used for replication.
      * If replication is not setup then returns default connection's database connection.
      */
-    async obtainMasterConnection(reconnect?: boolean): Promise<[any, Function]> {
+    async obtainMasterConnection(
+        reconnect?: boolean,
+    ): Promise<[any, Function]> {
         if (reconnect) {
-            await this.connect(reconnect);
+            await this.connect(reconnect)
         }
         if (!this.master) {
             throw new TypeORMError("Driver not Connected")
