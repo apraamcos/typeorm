@@ -79,8 +79,8 @@ export class PostgresQueryRunner
      * Returns obtained database connection.
      */
     connect(reconnect?: boolean): Promise<any> {
-        // if (this.databaseConnection && !reconnect)
-        //     return Promise.resolve(this.databaseConnection)
+        if (this.databaseConnection && !reconnect)
+            return Promise.resolve(this.databaseConnection)
 
         if (this.databaseConnectionPromise && !reconnect)
             return this.databaseConnectionPromise

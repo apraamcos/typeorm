@@ -342,16 +342,7 @@ export class PostgresDriver implements Driver {
      * Based on pooling options, it can either create connection immediately,
      * either create a pool and create connection when needed.
      */
-    async connect(reconnect?: boolean): Promise<void> {
-        if (reconnect) {
-            // try {
-            //     await this.master.end()
-            // } catch {}
-            // this.master = undefined
-            this.database = undefined
-            this.searchSchema = undefined
-            this.schema = undefined
-        }
+    async connect(): Promise<void> {
         if (this.options.replication) {
             this.slaves = await Promise.all(
                 this.options.replication.slaves.map((slave) => {
@@ -1179,7 +1170,7 @@ export class PostgresDriver implements Driver {
         reconnect?: boolean,
     ): Promise<[any, Function]> {
         if (reconnect) {
-            await this.connect(reconnect)
+            await this.connect()
         }
         if (!this.master) {
             throw new TypeORMError("Driver not Connected")
