@@ -27,6 +27,7 @@ import { MetadataTableType } from "../types/MetadataTableType"
 import { ReplicationMode } from "../types/ReplicationMode"
 import { PostgresDriver } from "./PostgresDriver"
 import { sleep } from "./sleep"
+import { BroadcasterResult } from "../../subscriber/BroadcasterResult"
 
 /**
  * Runs queries on a single postgres database connection.
@@ -249,16 +250,16 @@ export class PostgresQueryRunner
         //     throw new QueryRunnerAlreadyReleasedError()
         // }
 
-        // const broadcasterResult = new BroadcasterResult()
+        const broadcasterResult = new BroadcasterResult()
 
         try {
             const databaseConnection = await this.connect(reconnect)
 
-            // this.broadcaster.broadcastBeforeQueryEvent(
-            //     broadcasterResult,
-            //     query,
-            //     parameters,
-            // )
+            this.broadcaster.broadcastBeforeQueryEvent(
+                broadcasterResult,
+                query,
+                parameters,
+            )
 
             this.driver.connection.logger.logQuery(query, parameters, this)
 
@@ -266,24 +267,21 @@ export class PostgresQueryRunner
 
             const raw = await databaseConnection.query(query, parameters)
 
-            console.log("get raw")
             // log slow queries if maxQueryExecution time is set
             const maxQueryExecutionTime =
                 this.driver.options.maxQueryExecutionTime
             const queryEndTime = +new Date()
             const queryExecutionTime = queryEndTime - queryStartTime
 
-            // this.broadcaster.broadcastAfterQueryEvent(
-            //     broadcasterResult,
-            //     query,
-            //     parameters,
-            //     true,
-            //     queryExecutionTime,
-            //     raw,
-            //     undefined,
-            // )
-
-            console.log("after broadcastAfterQueryEvent")
+            this.broadcaster.broadcastAfterQueryEvent(
+                broadcasterResult,
+                query,
+                parameters,
+                true,
+                queryExecutionTime,
+                raw,
+                undefined,
+            )
 
             if (
                 maxQueryExecutionTime &&
@@ -321,12 +319,11 @@ export class PostgresQueryRunner
                 }
             }
 
-            console.log("get result!", result)
             return result
         } catch (err) {
-            console.log(`AGH1A, `, err)
+            console.info(`Query error, `, err)
             if (err.message === "Connection terminated unexpectedly") {
-                console.log(err.message)
+                console.info(err.message)
                 return await this.query(
                     query,
                     parameters,
@@ -339,7 +336,7 @@ export class PostgresQueryRunner
                 err.message === "the database system is in recovery mode" ||
                 err.message === "the database system is starting up"
             ) {
-                console.log(err.message)
+                console.info(err.message)
                 await sleep(5000)
                 return await this.query(
                     query,
@@ -354,19 +351,19 @@ export class PostgresQueryRunner
                 parameters,
                 this,
             )
-            // this.broadcaster.broadcastAfterQueryEvent(
-            //     broadcasterResult,
-            //     query,
-            //     parameters,
-            //     false,
-            //     undefined,
-            //     undefined,
-            //     err,
-            // )
+            this.broadcaster.broadcastAfterQueryEvent(
+                broadcasterResult,
+                query,
+                parameters,
+                false,
+                undefined,
+                undefined,
+                err,
+            )
 
             throw new QueryFailedError(query, parameters, err)
         } finally {
-            // await broadcasterResult.wait()
+            await broadcasterResult.wait()
         }
     }
 
