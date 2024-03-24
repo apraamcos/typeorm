@@ -245,10 +245,14 @@ export class PostgresQueryRunner
         parameters?: any[],
         useStructuredResult: boolean = false,
         reconnect?: boolean,
+        retryDuration?: number,
     ): Promise<any> {
         // if (this.isReleased && !reconnect) {
         //     throw new QueryRunnerAlreadyReleasedError()
         // }
+
+        const maxRetryDuration =
+            this.driver.options.extra.maxRetryDuration ?? 1 * 60 * 1000
 
         const broadcasterResult = new BroadcasterResult()
 
@@ -336,6 +340,10 @@ export class PostgresQueryRunner
                 err.message === "the database system is in recovery mode" ||
                 err.message === "the database system is starting up"
             ) {
+                if (retryDuration ?? 0 > maxRetryDuration) {
+                    console.info("Max retry period reached")
+                    throw new QueryFailedError(query, parameters, err)
+                }
                 console.info(err.message)
                 await sleep(5000)
                 return await this.query(
@@ -343,6 +351,7 @@ export class PostgresQueryRunner
                     parameters,
                     useStructuredResult,
                     true,
+                    (retryDuration ?? 0) + 5000,
                 )
             }
             this.driver.connection.logger.logQueryError(
