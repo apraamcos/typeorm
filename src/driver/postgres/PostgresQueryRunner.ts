@@ -252,7 +252,7 @@ export class PostgresQueryRunner
         // }
 
         const maxRetryDuration =
-            this.driver.options.extra?.maxRetryDuration ?? 3 * 60 * 1000
+            this.driver.options.extra?.maxRetryDuration ?? 2 * 60 * 1000
 
         const broadcasterResult = new BroadcasterResult()
 
