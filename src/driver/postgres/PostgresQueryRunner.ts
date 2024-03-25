@@ -340,7 +340,7 @@ export class PostgresQueryRunner
                 err.message === "the database system is in recovery mode" ||
                 err.message === "the database system is starting up"
             ) {
-                if (retryDuration ?? 0 > maxRetryDuration) {
+                if ((retryDuration ?? 0) > maxRetryDuration) {
                     console.info("Max retry period reached")
                     throw new QueryFailedError(query, parameters, err)
                 }
