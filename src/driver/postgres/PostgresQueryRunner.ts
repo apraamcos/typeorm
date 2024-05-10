@@ -338,7 +338,9 @@ export class PostgresQueryRunner
                 err.code === "ECONNREFUSED" ||
                 err.code === "ECONNRESET" ||
                 err.message === "the database system is in recovery mode" ||
-                err.message === "the database system is starting up"
+                err.message === "the database system is starting up" ||
+                err.message ===
+                    "Canceling statement due to conflict with recovery."
             ) {
                 if ((retryDuration ?? 0) > maxRetryDuration) {
                     console.info("Max retry period reached")
