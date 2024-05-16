@@ -110,6 +110,7 @@ export class SnowflakeQueryRunner
         query: string,
         parameters?: any[],
         useStructuredResult: boolean = false,
+        isRetry?: boolean,
     ): Promise<any> {
         try {
             const databaseConnection = await this.driver.databaseConnection
@@ -129,13 +130,28 @@ export class SnowflakeQueryRunner
             result.records = (await executeQuery) as any[]
             return result
         } catch (err) {
-            this.driver.connection.logger.logQueryError(
-                err,
-                query,
-                parameters,
-                this,
-            )
-            throw new QueryFailedError(query, parameters, err)
+            if (
+                err.errorMessage.includes(
+                    "Network error. Could not reach Snowflake.",
+                ) &&
+                !isRetry
+            ) {
+                console.info(err.message)
+                return await this.query(
+                    query,
+                    parameters,
+                    useStructuredResult,
+                    true,
+                )
+            } else {
+                this.driver.connection.logger.logQueryError(
+                    err,
+                    query,
+                    parameters,
+                    this,
+                )
+                throw new QueryFailedError(query, parameters, err)
+            }
         }
     }
 
@@ -729,7 +745,7 @@ export class SnowflakeQueryRunner
         const enumColumns = newTable.columns.filter(
             (column) => column.type === "enum" || column.type === "simple-enum",
         )
-        for (let column of enumColumns) {
+        for (const column of enumColumns) {
             // skip renaming for user-defined enum name
             if (column.enumName) continue
 
@@ -3945,7 +3961,7 @@ export class SnowflakeQueryRunner
         table: Table | View,
         indexOrName: TableIndex | string,
     ): Query {
-        let indexName = InstanceChecker.isTableIndex(indexOrName)
+        const indexName = InstanceChecker.isTableIndex(indexOrName)
             ? indexOrName.name
             : indexOrName
         const { schema } = this.driver.parseTableName(table)
