@@ -74,8 +74,24 @@ export class SnowflakeQueryRunner
      * Creates/uses database connection from the connection pool to perform further operations.
      * Returns obtained database connection.
      */
-    connect(): Promise<any> {
-        return Promise.resolve(this.driver.databaseConnection)
+    async connect(isRetry?: boolean): Promise<any> {
+        try {
+            return await this.driver.databaseConnection
+        } catch (e) {
+            console.info("Error on connect")
+            if (
+                e.errorMessage.includes(
+                    "Network error. Could not reach Snowflake.",
+                ) &&
+                !isRetry
+            ) {
+                console.info("Retry")
+                return await this.connect(true)
+            } else {
+                console.log("Failed")
+                throw e
+            }
+        }
     }
 
     /**
@@ -130,13 +146,14 @@ export class SnowflakeQueryRunner
             result.records = (await executeQuery) as any[]
             return result
         } catch (err) {
+            console.info("Error on query")
             if (
                 err.errorMessage.includes(
                     "Network error. Could not reach Snowflake.",
                 ) &&
                 !isRetry
             ) {
-                console.info(err.message)
+                console.info("Retry", err.message)
                 return await this.query(
                     query,
                     parameters,
@@ -144,6 +161,7 @@ export class SnowflakeQueryRunner
                     true,
                 )
             } else {
+                console.info("failed")
                 this.driver.connection.logger.logQueryError(
                     err,
                     query,
