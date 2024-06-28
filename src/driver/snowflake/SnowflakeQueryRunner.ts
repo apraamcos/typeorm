@@ -76,6 +76,7 @@ export class SnowflakeQueryRunner
      */
     async connect(isRetry?: boolean): Promise<any> {
         try {
+            console.log("I am here step 00000")
             return await this.driver.databaseConnection
         } catch (e) {
             console.info("Error on connect")

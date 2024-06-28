@@ -254,16 +254,19 @@ export class SnowflakeDriver implements Driver {
      */
     async connect(): Promise<void> {
         const { logger } = this.connection
+        console.log("I am in connect step 1")
         configure({
             logLevel: "ERROR",
         })
         try {
-            this.databaseConnection = new Promise((resolve, reject) =>
-                createConnection(this.options).connect(
+            this.databaseConnection = new Promise((resolve, reject) => {
+                console.log("I am in connect step 3")
+                return createConnection(this.options).connect(
                     (err: SnowflakeError | undefined, conn: Connection) =>
                         err ? reject(err) : resolve(conn),
-                ),
-            )
+                )
+            })
+            console.log("I am in connect step 2")
         } catch (err) {
             logger.log("warn", err)
         }
