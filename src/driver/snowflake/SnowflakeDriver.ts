@@ -248,60 +248,45 @@ export class SnowflakeDriver implements Driver {
     // Public Implemented Methods
     // -------------------------------------------------------------------------
 
-    /**
-     * Performs connection to the database.
-     * TODO: Add pool connection
-     */
-    async connect(): Promise<void> {
+    async createSnowflakeConnection(isRetry?: boolean): Promise<Connection> {
         const { logger } = this.connection
-        console.log("I am in connect step 1")
-        configure({
-            logLevel: "ERROR",
-        })
         try {
-            this.databaseConnection = new Promise((resolve, reject) => {
-                console.log("I am in connect step 3")
+            return await new Promise((resolve, reject) => {
                 return createConnection(this.options).connect(
                     (err: SnowflakeError | undefined, conn: Connection) =>
                         err ? reject(err) : resolve(conn),
                 )
             })
-            console.log("I am in connect step 2")
         } catch (err) {
-            logger.log("warn", err)
+            console.info("Error on query")
+            if (
+                err.errorMessage.includes(
+                    "Network error. Could not reach Snowflake.",
+                ) &&
+                !isRetry
+            ) {
+                console.info("createSnowflakeConnection Retry", err.message)
+                return await this.createSnowflakeConnection(true)
+            } else {
+                logger.log("warn", err)
+                throw err
+            }
         }
+    }
+    /**
+     * Performs connection to the database.
+     * TODO: Add pool connection
+     */
+    async connect(): Promise<void> {
+        configure({
+            logLevel: "ERROR",
+        })
     }
 
     /**
      * Closes connection with database.
      */
-    async disconnect(): Promise<void> {
-        if (!this.databaseConnection)
-            return Promise.reject(new ConnectionIsNotSetError("snowflake"))
-        // Don't disconnect connections with CLOSED state
-        if (this.databaseConnection._closing)
-            return Promise.reject(
-                new Error(
-                    "connection tried to disconnect but was already at CLOSED state",
-                ),
-            )
-        // const { logger } = this.databaseConnection
-        // await new Promise((resolve, reject) => {
-        //     this.databaseConnection.destroy((err: SnowflakeError) => {
-        //         if (err) {
-        //             logger.log("warn", `Unable to disconnect: ${err.message}`)
-        //             reject(err)
-        //         } else {
-        //             logger.log(
-        //                 "warn",
-        //                 `Disconnected connection with id: ${this.databaseConnection.getId()}`,
-        //             )
-        //             resolve(this.databaseConnection.getId())
-        //         }
-        //     })
-        // })
-        this.databaseConnection = undefined
-    }
+    async disconnect(): Promise<void> {}
 
     /**
      * Creates a query runner used to execute database queries.

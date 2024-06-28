@@ -16,7 +16,7 @@
     "@typescript-eslint/no-unused-vars": "warn",
     "@typescript-eslint/no-var-requires": "warn",
     "@typescript-eslint/triple-slash-reference": "warn",
-    "no-async-promise-executor": "warn",
+    "no-async-promise-executor": "off",
     "no-control-regex": "warn",
     "no-empty": "warn",
     "no-extra-semi": "warn",
@@ -24,6 +24,7 @@
     "no-regex-spaces": "warn",
     "prefer-const": "warn",
     "prefer-rest-params": "warn",
-    "prefer-spread": "warn"
+    "prefer-spread": "warn",
+    "no-useless-escape": "off"
   }
 }

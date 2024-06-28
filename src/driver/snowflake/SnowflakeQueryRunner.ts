@@ -127,13 +127,12 @@ export class SnowflakeQueryRunner
         query: string,
         parameters?: any[],
         useStructuredResult: boolean = false,
-        isRetry?: boolean,
     ): Promise<any> {
+        this.driver.connection.logger.logQuery(query, parameters, this)
+        const connection = await this.driver.createSnowflakeConnection()
         try {
-            const databaseConnection = await this.driver.databaseConnection
-            this.driver.connection.logger.logQuery(query, parameters, this)
-            const executeQuery = new Promise((resolve, reject) =>
-                databaseConnection.execute({
+            return (await new Promise(async (resolve, reject) =>
+                connection.execute({
                     sqlText: query,
                     binds: parameters,
                     complete: (
@@ -142,35 +141,19 @@ export class SnowflakeQueryRunner
                         rows: any,
                     ) => (err ? reject(err) : resolve(rows || [])),
                 }),
-            )
-            const result = new QueryResult()
-            result.records = (await executeQuery) as any[]
-            return result
+            )) as any[]
         } catch (err) {
-            console.info("Error on query")
-            if (
-                err.errorMessage.includes(
-                    "Network error. Could not reach Snowflake.",
-                ) &&
-                !isRetry
-            ) {
-                console.info("Retry", err.message)
-                return await this.query(
-                    query,
-                    parameters,
-                    useStructuredResult,
-                    true,
-                )
-            } else {
-                console.info("failed")
-                this.driver.connection.logger.logQueryError(
-                    err,
-                    query,
-                    parameters,
-                    this,
-                )
-                throw new QueryFailedError(query, parameters, err)
-            }
+            this.driver.connection.logger.logQueryError(
+                err,
+                query,
+                parameters,
+                this,
+            )
+            throw new QueryFailedError(query, parameters, err)
+        } finally {
+            connection.destroy((err, conn) => {
+                console.error("Snowflake destroy failed", err)
+            })
         }
     }
 
@@ -184,24 +167,39 @@ export class SnowflakeQueryRunner
         onError?: Function,
         onData?: (rowData: any) => void,
     ): Promise<ReadStream> {
-        const databaseConnection = await this.driver.databaseConnection
-        return new Promise((resolve, reject) =>
-            databaseConnection.execute({
-                streamResult: true,
-                sqlText: query,
-                binds: parameters,
-                complete: (
-                    err: SnowflakeError | undefined,
-                    stmt: snowflake.Statement,
-                    rows: any,
-                ) => {
-                    stmt.streamRows()
-                        .on("error", reject)
-                        .on("data", onData ?? resolve)
-                        .on("end", resolve)
-                },
-            }),
-        )
+        this.driver.connection.logger.logQuery(query, parameters, this)
+        const connection = await this.driver.createSnowflakeConnection()
+        try {
+            return new Promise(async (resolve, reject) =>
+                connection.execute({
+                    streamResult: true,
+                    sqlText: query,
+                    binds: parameters,
+                    complete: (
+                        err: SnowflakeError | undefined,
+                        stmt: snowflake.Statement,
+                        rows: any,
+                    ) => {
+                        stmt.streamRows()
+                            .on("error", reject)
+                            .on("data", onData ?? resolve)
+                            .on("end", resolve)
+                    },
+                }),
+            )
+        } catch (err) {
+            this.driver.connection.logger.logQueryError(
+                err,
+                query,
+                parameters,
+                this,
+            )
+            throw new QueryFailedError(query, parameters, err)
+        } finally {
+            connection.destroy((err, conn) => {
+                console.error("Snowflake destroy failed", err)
+            })
+        }
     }
 
     /**
