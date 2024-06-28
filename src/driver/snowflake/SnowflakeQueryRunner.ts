@@ -23,6 +23,7 @@ import { ColumnType } from "../types/ColumnTypes"
 import { IsolationLevel } from "../types/IsolationLevel"
 import { MetadataTableType } from "../types/MetadataTableType"
 import { SnowflakeDriver } from "./SnowflakeDriver"
+import { QueryResult } from "../../query-runner/QueryResult"
 
 /**
  * Runs queries on a single postgres database connection.
@@ -130,7 +131,8 @@ export class SnowflakeQueryRunner
         this.driver.connection.logger.logQuery(query, parameters, this)
         const connection = await this.driver.createSnowflakeConnection()
         try {
-            return (await new Promise(async (resolve, reject) =>
+            const result = new QueryResult()
+            result.records = (await new Promise(async (resolve, reject) =>
                 connection.execute({
                     sqlText: query,
                     binds: parameters,
@@ -140,7 +142,8 @@ export class SnowflakeQueryRunner
                         rows: any,
                     ) => (err ? reject(err) : resolve(rows || [])),
                 }),
-            )) as any[]
+            )) as any
+            return result
         } catch (err) {
             this.driver.connection.logger.logQueryError(
                 err,
@@ -150,9 +153,7 @@ export class SnowflakeQueryRunner
             )
             throw new QueryFailedError(query, parameters, err)
         } finally {
-            connection.destroy((err, conn) => {
-                console.error("Snowflake destroy failed", err)
-            })
+            connection.destroy(() => {})
         }
     }
 
@@ -195,9 +196,7 @@ export class SnowflakeQueryRunner
             )
             throw new QueryFailedError(query, parameters, err)
         } finally {
-            connection.destroy((err, conn) => {
-                console.error("Snowflake destroy failed", err)
-            })
+            connection.destroy(() => {})
         }
     }
 
