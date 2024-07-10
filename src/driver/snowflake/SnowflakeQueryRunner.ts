@@ -138,7 +138,7 @@ export class SnowflakeQueryRunner
                     binds: parameters,
                     complete: (
                         err: SnowflakeError | undefined,
-                        stmt: snowflake.Statement,
+                        stmt: snowflake.RowStatement,
                         rows: any,
                     ) => (err ? reject(err) : resolve(rows || [])),
                 }),
@@ -177,7 +177,7 @@ export class SnowflakeQueryRunner
                     binds: parameters,
                     complete: (
                         err: SnowflakeError | undefined,
-                        stmt: snowflake.Statement,
+                        stmt: snowflake.RowStatement,
                         rows: any,
                     ) => {
                         stmt.streamRows()
