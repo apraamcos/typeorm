@@ -1,5 +1,5 @@
 import type { Connection, SnowflakeError } from "snowflake-sdk"
-import { createConnection, configure } from "snowflake-sdk"
+import { createConnection, configure, LogLevel } from "snowflake-sdk"
 import { ObjectLiteral } from "../../common/ObjectLiteral"
 import { DataSource } from "../../data-source"
 import { ColumnMetadata } from "../../metadata/ColumnMetadata"
@@ -278,7 +278,7 @@ export class SnowflakeDriver implements Driver {
      */
     async connect(): Promise<void> {
         configure({
-            logLevel: "ERROR",
+            logLevel: LogLevel.ERROR,
         })
     }
 

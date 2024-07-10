@@ -115,7 +115,7 @@ export interface SnowflakeConnectionOptions extends BaseDataSourceOptions {
      * Specifies the private key (in PEM format) for key pair authentication.
      * For details, see {@link https://docs.snowflake.com/en/user-guide/nodejs-driver-use.html#label-nodejs-key-pair-authentication Using Key Pair Authentication & Key Pair Rotation}.
      */
-    privateKey?: string | Buffer
+    privateKey?: string
 
     /**
      * Specifies the local path to the private key file (e.g. rsa_key.p8).
