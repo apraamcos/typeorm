@@ -12,8 +12,6 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.PACKAGE_DEPLOYMENT_TOKEN }}
       - uses: actions/setup-node@v3
         with:
           node-version: 20
