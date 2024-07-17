@@ -93,6 +93,7 @@
   ],
   "devDependencies": {
     "@tsconfig/node16": "^16.1.1",
+    "@types/app-root-path": "^1.2.4",
     "@types/chai": "^4.3.4",
     "@types/chai-as-promised": "^7.1.5",
     "@types/debug": "^4.1.7",
@@ -195,6 +196,7 @@
   },
   "dependencies": {
     "@sqltools/formatter": "^1.2.5",
+    "app-root-path": "^3.1.0",
     "buffer": "^6.0.3",
     "chalk": "^4.1.2",
     "cli-highlight": "^2.1.11",
