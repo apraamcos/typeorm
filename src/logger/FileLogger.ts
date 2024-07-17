@@ -1,5 +1,6 @@
 import { FileLoggerOptions, LoggerOptions } from "./LoggerOptions"
 import { LogLevel, LogMessage } from "./Logger"
+import appRootPath from "app-root-path"
 import { QueryRunner } from "../query-runner/QueryRunner"
 import { PlatformTools } from "../platform/PlatformTools"
 import { AbstractLogger } from "./AbstractLogger"
@@ -39,7 +40,7 @@ export class FileLogger extends AbstractLogger {
 
         const strings: string[] = []
 
-        for (const message of messages) {
+        for (let message of messages) {
             switch (message.type ?? level) {
                 case "log":
                     strings.push(`[LOG]: ${message.message}`)
@@ -93,7 +94,7 @@ export class FileLogger extends AbstractLogger {
      */
     protected write(strings: string | string[]) {
         strings = Array.isArray(strings) ? strings : [strings]
-        const basePath = "./"
+        const basePath = appRootPath.path + "/"
         let logPath = "ormlogs.log"
         if (this.fileLoggerOptions && this.fileLoggerOptions.logPath) {
             logPath = PlatformTools.pathNormalize(

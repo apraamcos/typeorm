@@ -1,3 +1,4 @@
+import appRootPath from "app-root-path"
 import path from "path"
 import { DataSourceOptions } from "../data-source/DataSourceOptions"
 import { PlatformTools } from "../platform/PlatformTools"
@@ -258,7 +259,7 @@ export class ConnectionOptionsReader {
     protected get baseDirectory(): string {
         if (this.options && this.options.root) return this.options.root
 
-        return "./"
+        return appRootPath.path
     }
 
     /**
