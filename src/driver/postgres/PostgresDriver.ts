@@ -952,14 +952,15 @@ export class PostgresDriver implements Driver {
         }
     }
 
-    isStringEnum(obj: any) {
+    isEnum(obj: any) {
         if (Array.isArray(obj)) {
             return false
         }
-
         if (typeof obj === "object" && obj !== null) {
             return Object.entries(obj).every(
-                ([_, value]) => typeof value === "string",
+                ([key, value]) =>
+                    typeof key === "string" &&
+                    (typeof value === "string" || typeof value === "number"),
             )
         }
         return false
@@ -1013,7 +1014,7 @@ export class PostgresDriver implements Driver {
             return "character"
         } else if (column.type === "varbit") {
             return "bit varying"
-        } else if (this.isStringEnum(column.type)) {
+        } else if (this.isEnum(column.type)) {
             return "character varying"
         } else {
             return (column.type as string) || ""
