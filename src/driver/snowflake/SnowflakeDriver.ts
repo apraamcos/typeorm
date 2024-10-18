@@ -128,6 +128,7 @@ export class SnowflakeDriver implements Driver {
         "array",
         "geometry",
         "geography",
+        "character varying"
     ]
 
     /**
@@ -661,7 +662,9 @@ export class SnowflakeDriver implements Driver {
             column.type === "int4"
         ) {
             return "integer"
-        } else if (column.type === Date || column.type === "timestamp") {
+        } else if (column.type === String || column.type === "varchar") {
+            return "character varying"
+        }else if (column.type === Date || column.type === "timestamp") {
             return "timestamp_ntz"
         } else if (column.type === "timestamptz") {
             return "timestamp_ltz"
