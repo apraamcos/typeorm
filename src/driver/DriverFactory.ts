@@ -16,6 +16,7 @@ import { AuroraPostgresDriver } from "./aurora-postgres/AuroraPostgresDriver"
 import { Driver } from "./Driver"
 import { DataSource } from "../data-source/DataSource"
 import { SapDriver } from "./sap/SapDriver"
+import { BetterSqlite3Driver } from "./better-sqlite3/BetterSqlite3Driver"
 import { CapacitorDriver } from "./capacitor/CapacitorDriver"
 import { SpannerDriver } from "./spanner/SpannerDriver"
 import { SnowflakeDriver } from "./snowflake/SnowflakeDriver"
@@ -42,6 +43,8 @@ export class DriverFactory {
                 return new MysqlDriver(connection)
             case "sqlite":
                 return new SqliteDriver(connection)
+            case "better-sqlite3":
+                return new BetterSqlite3Driver(connection)
             case "cordova":
                 return new CordovaDriver(connection)
             case "nativescript":
