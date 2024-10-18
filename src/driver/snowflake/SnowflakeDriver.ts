@@ -1,5 +1,5 @@
 import type { Connection, SnowflakeError } from "snowflake-sdk"
-import { createConnection, configure, LogLevel } from "snowflake-sdk"
+import { createConnection, configure } from "snowflake-sdk"
 import { ObjectLiteral } from "../../common/ObjectLiteral"
 import { DataSource } from "../../data-source"
 import { ColumnMetadata } from "../../metadata/ColumnMetadata"
@@ -128,7 +128,7 @@ export class SnowflakeDriver implements Driver {
         "array",
         "geometry",
         "geography",
-        "character varying"
+        "character varying",
     ]
 
     /**
@@ -279,7 +279,7 @@ export class SnowflakeDriver implements Driver {
      */
     async connect(): Promise<void> {
         configure({
-            logLevel: LogLevel.ERROR,
+            logLevel: "ERROR",
         })
     }
 
@@ -664,7 +664,7 @@ export class SnowflakeDriver implements Driver {
             return "integer"
         } else if (column.type === String || column.type === "varchar") {
             return "character varying"
-        }else if (column.type === Date || column.type === "timestamp") {
+        } else if (column.type === Date || column.type === "timestamp") {
             return "timestamp_ntz"
         } else if (column.type === "timestamptz") {
             return "timestamp_ltz"
