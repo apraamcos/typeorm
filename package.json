@@ -126,6 +126,7 @@
     "gulpclass": "^0.2.0",
     "husky": "^8.0.3",
     "mocha": "^10.2.0",
+    "pg-query-stream": "^4.3.0",
     "prettier": "^2.8.3",
     "reflect-metadata": "^0.2.2",
     "remap-istanbul": "^0.13.0",
@@ -134,13 +135,12 @@
     "sinon-chai": "^3.7.0",
     "source-map-support": "^0.5.21",
     "ts-node": "^10.9.2",
+    "typeorm-aurora-data-api-driver": "^2.4.4",
     "typescript": "^5.3.3"
   },
   "peerDependencies": {
     "pg": "^8.13.1",
-    "pg-query-stream": "^4.3.0",
-    "snowflake-sdk": "^1.14.0",
-    "typeorm-aurora-data-api-driver": "^2.4.4"
+    "snowflake-sdk": "^1.14.0"
   },
   "peerDependenciesMeta": {
     "@google-cloud/spanner": {
