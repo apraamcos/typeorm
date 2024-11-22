@@ -76,6 +76,8 @@ export class SqliteDriver extends AbstractSqliteDriver {
     }): string {
         if ((column.type as any) === Buffer) {
             return "blob"
+        } else if (column.type === "timestamp with time zone") {
+            return "text"
         }
 
         return super.normalizeType(column)
