@@ -337,6 +337,7 @@ export class PostgresQueryRunner
             } else if (
                 err.code === "ECONNREFUSED" ||
                 err.code === "ECONNRESET" ||
+                err.code === "ETIMEDOUT" ||
                 err.message === "the database system is in recovery mode" ||
                 err.message === "the database system is starting up" ||
                 err.message ===
