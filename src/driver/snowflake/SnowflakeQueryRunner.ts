@@ -3231,6 +3231,10 @@ export class SnowflakeQueryRunner
                                         : undefined
                             }
 
+                            if (tableColumn.type === "time with time zone") {
+                                tableColumn.type = "timestamp_tz"
+                            }
+
                             // check if column has user-defined data type.
                             // NOTE: if ENUM type defined with "array:true" it comes with ARRAY type instead of USER-DEFINED
                             if (

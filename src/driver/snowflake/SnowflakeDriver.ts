@@ -123,6 +123,7 @@ export class SnowflakeDriver implements Driver {
         "timestamp_ltz",
         "timestamp_ntz",
         "timestamp_tz",
+        "timestamp with time zone",
         "variant",
         "object",
         "array",
@@ -258,19 +259,17 @@ export class SnowflakeDriver implements Driver {
                 )
             })
         } catch (err) {
-            console.info("Error on query")
             if (
-                err.errorMessage.includes(
+                err.errorMessage?.includes(
                     "Network error. Could not reach Snowflake.",
                 ) &&
                 !isRetry
             ) {
                 console.info("createSnowflakeConnection Retry", err.message)
                 return await this.createSnowflakeConnection(true)
-            } else {
-                logger.log("warn", err)
-                throw err
             }
+            logger.log("warn", err)
+            throw err
         }
     }
     /**
