@@ -129,6 +129,8 @@ export class SnowflakeQueryRunner
         useStructuredResult: boolean = false,
     ): Promise<any> {
         this.driver.connection.logger.logQuery(query, parameters, this)
+        query = query.toUpperCase()
+
         const connection = await this.driver.createSnowflakeConnection()
         try {
             const result = new QueryResult()

@@ -384,6 +384,10 @@ export class SnowflakeDriver implements Driver {
             tablePath.unshift(schema)
         }
 
+        if (this.database) {
+            tablePath.unshift(this.database)
+        }
+
         return tablePath.join(".")
     }
 
