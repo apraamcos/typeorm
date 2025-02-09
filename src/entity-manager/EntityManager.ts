@@ -38,6 +38,7 @@ import { UpsertOptions } from "../repository/UpsertOptions"
 import { InstanceChecker } from "../util/InstanceChecker"
 import { ObjectLiteral } from "../common/ObjectLiteral"
 import { PickKeysByType } from "../common/PickKeysByType"
+import { ColumnMetadata } from "../metadata/ColumnMetadata"
 
 /**
  * Entity manager supposed to work with any entity, automatically find its repository and call its methods,
@@ -737,30 +738,78 @@ export class EntityManager {
             .execute()
     }
 
+    /**
+     * Inserts a given entity into the database.
+     * Unlike save method executes a primitive operation without cascades, relations and other operations included.
+     * Executes fast and efficient INSERT query.
+     * Does not check if entity exist in the database, so query will fail if duplicate entity is being inserted.
+     * You can execute bulk inserts using this method.
+     */
     async upsertMerge<Entity extends ObjectLiteral>(
         target: EntityTarget<Entity>,
         entityOrEntities:
             | QueryDeepPartialEntity<Entity>
             | QueryDeepPartialEntity<Entity>[],
     ): Promise<InsertResult> {
-        // const metadata = this.connection.getMetadata(target)
-
-        // let options: UpsertOptions<Entity>
+        const metadata = this.connection.getMetadata(target)
 
         let entities: QueryDeepPartialEntity<Entity>[]
-
         if (!Array.isArray(entityOrEntities)) {
             entities = [entityOrEntities]
         } else {
             entities = entityOrEntities
         }
 
-        return this.createQueryBuilder()
-            .insert()
-            .into(target)
-            .values(entities)
-            .execute()
+        const tableName = this.connection.driver.buildTableName(
+            metadata.tableName,
+            metadata.schema,
+        )
+
+        const primaryKeyColumns = metadata.columns.filter((x) => x.isPrimary)
+        const isGenerated = primaryKeyColumns.some((x) => x.isGenerated)
+
+        const columns: ColumnMetadata[] = []
+        if (isGenerated) {
+            columns.push(...metadata.columns.filter((x) => !x.isPrimary))
+        } else {
+            columns.push(...metadata.columns)
+        }
+
+        const values = entities.map((entity: any) =>
+            columns.map((col) => entity[col.propertyName]),
+        )
+
+        const mergeQuery = `
+            MERGE INTO ${tableName} AS target
+            USING (SELECT ${values[0]
+                .map((_, j) => `column${j + 1} as ${columns[j].databaseName}`)
+                .join(",")} FROM VALUES ${values
+            .map((item) => `(${item.map(() => `?`).join(",")})`)
+            .join(",")} ) AS source
+            ON ${primaryKeyColumns
+                .map(
+                    (col) =>
+                        `target.${col.databaseName} = source.${col.databaseName}`,
+                )
+                .join(" AND ")}
+            WHEN MATCHED THEN
+                UPDATE SET ${columns
+                    .map(
+                        (col) =>
+                            `${col.databaseName} = source.${col.databaseName}`,
+                    )
+                    .join(", ")}
+            WHEN NOT MATCHED THEN
+                INSERT (${columns
+                    .map((x) => x.databaseName)
+                    .join(", ")}) VALUES (${columns
+            .map((_, i) => `source.${columns[i].databaseName}`)
+            .join(", ")});
+        `
+
+        return await this.connection.query(mergeQuery, values.flat())
     }
+
     /**
      * Updates entity partially. Entity can be found by a given condition(s).
      * Unlike save method executes a primitive operation without cascades, relations and other operations included.
