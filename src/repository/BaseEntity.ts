@@ -368,6 +368,20 @@ export class BaseEntity {
     }
 
     /**
+     * Inserts a given entity into the database, unless a unique constraint conflicts then updates the entity
+     * Unlike save method executes a primitive operation without cascades, relations and other operations included.
+     * Executes fast and efficient INSERT ... ON CONFLICT DO UPDATE/ON DUPLICATE KEY UPDATE query.
+     */
+    static upsertMerge<T extends BaseEntity>(
+        this: { new (): T } & typeof BaseEntity,
+        entityOrEntities:
+            | QueryDeepPartialEntity<T>
+            | QueryDeepPartialEntity<T>[],
+    ): Promise<InsertResult> {
+        return this.getRepository<T>().upsertMerge(entityOrEntities)
+    }
+
+    /**
      * Deletes entities by a given criteria.
      * Unlike remove method executes a primitive operation without cascades, relations and other operations included.
      * Executes fast and efficient DELETE query.

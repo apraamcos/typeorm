@@ -384,6 +384,22 @@ export class Repository<Entity extends ObjectLiteral> {
     }
 
     /**
+     * Inserts a given entity into the database, unless a unique constraint conflicts then updates the entity
+     * Unlike save method executes a primitive operation without cascades, relations and other operations included.
+     * Executes fast and efficient MERGE DO UPDATE/ON DUPLICATE KEY UPDATE query.
+     */
+    upsertMerge(
+        entityOrEntities:
+            | QueryDeepPartialEntity<Entity>
+            | QueryDeepPartialEntity<Entity>[],
+    ): Promise<InsertResult> {
+        return this.manager.upsertMerge(
+            this.metadata.target as any,
+            entityOrEntities,
+        )
+    }
+
+    /**
      * Deletes entities by a given criteria.
      * Unlike save method executes a primitive operation without cascades, relations and other operations included.
      * Executes fast and efficient DELETE query.

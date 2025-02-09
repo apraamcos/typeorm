@@ -737,6 +737,30 @@ export class EntityManager {
             .execute()
     }
 
+    async upsertMerge<Entity extends ObjectLiteral>(
+        target: EntityTarget<Entity>,
+        entityOrEntities:
+            | QueryDeepPartialEntity<Entity>
+            | QueryDeepPartialEntity<Entity>[],
+    ): Promise<InsertResult> {
+        const metadata = this.connection.getMetadata(target)
+
+        let options: UpsertOptions<Entity>
+
+        let entities: QueryDeepPartialEntity<Entity>[]
+
+        if (!Array.isArray(entityOrEntities)) {
+            entities = [entityOrEntities]
+        } else {
+            entities = entityOrEntities
+        }
+
+        return this.createQueryBuilder()
+            .insert()
+            .into(target)
+            .values(entities)
+            .execute()
+    }
     /**
      * Updates entity partially. Entity can be found by a given condition(s).
      * Unlike save method executes a primitive operation without cascades, relations and other operations included.
