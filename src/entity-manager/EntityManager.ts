@@ -743,9 +743,9 @@ export class EntityManager {
             | QueryDeepPartialEntity<Entity>
             | QueryDeepPartialEntity<Entity>[],
     ): Promise<InsertResult> {
-        const metadata = this.connection.getMetadata(target)
+        // const metadata = this.connection.getMetadata(target)
 
-        let options: UpsertOptions<Entity>
+        // let options: UpsertOptions<Entity>
 
         let entities: QueryDeepPartialEntity<Entity>[]
 
