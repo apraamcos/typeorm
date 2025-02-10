@@ -125,7 +125,6 @@ export class SnowflakeDriver implements Driver {
         "timestamp_tz",
         "timestamp with time zone",
         "timestamp without time zone",
-        "character varying",
         "jsonb",
         "variant",
         "object",
@@ -156,6 +155,7 @@ export class SnowflakeDriver implements Driver {
         "text",
         "binary",
         "varbinary",
+        "character varying",
     ]
 
     /**
