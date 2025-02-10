@@ -124,6 +124,7 @@ export class SnowflakeDriver implements Driver {
         "timestamp_ntz",
         "timestamp_tz",
         "timestamp with time zone",
+        "timestamp without time zone",
         "jsonb",
         "variant",
         "object",
