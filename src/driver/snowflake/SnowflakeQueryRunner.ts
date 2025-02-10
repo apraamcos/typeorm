@@ -3241,10 +3241,6 @@ export class SnowflakeQueryRunner
                                 tableColumn.type = "timestamp_tz"
                             }
 
-                            if (tableColumn.type === "jsonb") {
-                                tableColumn.type = "variant"
-                            }
-
                             // check if column has user-defined data type.
                             // NOTE: if ENUM type defined with "array:true" it comes with ARRAY type instead of USER-DEFINED
                             if (

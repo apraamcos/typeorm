@@ -471,7 +471,7 @@ export class SnowflakeDriver implements Driver {
         ) {
             return DateUtils.mixedDateToDate(value)
         } else if (
-            ["json", "jsonb", ...this.spatialTypes].indexOf(
+            ["json", "jsonb", "variant", ...this.spatialTypes].indexOf(
                 columnMetadata.type,
             ) >= 0
         ) {
