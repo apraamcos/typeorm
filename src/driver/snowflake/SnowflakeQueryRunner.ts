@@ -130,7 +130,6 @@ export class SnowflakeQueryRunner
         useStructuredResult: boolean = false,
     ): Promise<any> {
         this.driver.connection.logger.logQuery(query, parameters, this)
-        query = query.toUpperCase()
         parameters = parameters
             ? formatSnowflakeParameter(parameters)
             : undefined
