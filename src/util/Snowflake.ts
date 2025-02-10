@@ -1,7 +1,10 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const formatSnowflakeParameter = (arr: any[]): any[] => {
-    return arr.map((obj) =>
-        Object.fromEntries(
+    return arr.map((obj) => {
+        if (obj === null || typeof obj !== "object") {
+            return obj
+        }
+        return Object.fromEntries(
             Object.entries(obj).map(([key, value]) => [
                 key,
                 value === undefined
@@ -11,6 +14,6 @@ export const formatSnowflakeParameter = (arr: any[]): any[] => {
                     ? JSON.stringify(value)
                     : value,
             ]),
-        ),
-    )
+        )
+    })
 }
