@@ -24,6 +24,7 @@ import { IsolationLevel } from "../types/IsolationLevel"
 import { MetadataTableType } from "../types/MetadataTableType"
 import { SnowflakeDriver } from "./SnowflakeDriver"
 import { QueryResult } from "../../query-runner/QueryResult"
+import { formatSnowflakeParameter } from "../../util/snowflake"
 
 /**
  * Runs queries on a single postgres database connection.
@@ -130,6 +131,9 @@ export class SnowflakeQueryRunner
     ): Promise<any> {
         this.driver.connection.logger.logQuery(query, parameters, this)
         query = query.toUpperCase()
+        parameters = parameters
+            ? formatSnowflakeParameter(parameters)
+            : undefined
 
         const connection = await this.driver.createSnowflakeConnection()
         try {
@@ -3235,6 +3239,10 @@ export class SnowflakeQueryRunner
 
                             if (tableColumn.type === "time with time zone") {
                                 tableColumn.type = "timestamp_tz"
+                            }
+
+                            if (tableColumn.type === "jsonb") {
+                                tableColumn.type = "variant"
                             }
 
                             // check if column has user-defined data type.
