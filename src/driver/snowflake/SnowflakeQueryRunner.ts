@@ -24,7 +24,7 @@ import { IsolationLevel } from "../types/IsolationLevel"
 import { MetadataTableType } from "../types/MetadataTableType"
 import { SnowflakeDriver } from "./SnowflakeDriver"
 import { QueryResult } from "../../query-runner/QueryResult"
-import { formatSnowflakeParameter } from "../../util/snowflake"
+import { formatSnowflakeParameter } from "../../util/Snowflake"
 
 /**
  * Runs queries on a single postgres database connection.
