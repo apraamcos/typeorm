@@ -760,10 +760,11 @@ export class EntityManager {
             entities = entityOrEntities
         }
 
-        const tableName = this.connection.driver.buildTableName(
-            metadata.tableName,
-            metadata.schema,
-        )
+        const tableName = this.connection.driver
+            .buildTableName(metadata.tableName, metadata.schema)
+            .split(".")
+            .map((x) => `"${x}"`)
+            .join(".")
 
         const primaryKeyColumns = metadata.columns.filter((x) => x.isPrimary)
         const isGenerated = primaryKeyColumns.some((x) => x.isGenerated)
@@ -780,36 +781,36 @@ export class EntityManager {
         )
 
         const mergeQuery = `
-            MERGE INTO ${tableName} AS target
+            MERGE INTO ${tableName} AS TARGET
             USING (SELECT ${values[0]
                 .map((_, j) =>
                     columns[j].type === "jsonb"
-                        ? `PARSE_JSON(column${j + 1}) as ${
+                        ? `PARSE_JSON(COLUMN${j + 1}) AS "${
                               columns[j].databaseName
-                          }`
-                        : `column${j + 1} as ${columns[j].databaseName}`,
+                          }"`
+                        : `COLUMN${j + 1} as "${columns[j].databaseName}"`,
                 )
                 .join(",")} FROM VALUES ${values
             .map((item) => `(${item.map(() => `?`).join(",")})`)
-            .join(",")} ) AS source
+            .join(",")} ) AS SOURCE
             ON ${primaryKeyColumns
                 .map(
                     (col) =>
-                        `target.${col.databaseName} = source.${col.databaseName}`,
+                        `TARGET."${col.databaseName}" = SOURCE."${col.databaseName}"`,
                 )
                 .join(" AND ")}
             WHEN MATCHED THEN
                 UPDATE SET ${columns
                     .map(
                         (col) =>
-                            `${col.databaseName} = source.${col.databaseName}`,
+                            `"${col.databaseName}" = SOURCE."${col.databaseName}"`,
                     )
                     .join(", ")}
             WHEN NOT MATCHED THEN
                 INSERT (${columns
-                    .map((x) => x.databaseName)
+                    .map((x) => `"${x.databaseName}"`)
                     .join(", ")}) VALUES (${columns
-            .map((_, i) => `source.${columns[i].databaseName}`)
+            .map((_, i) => `SOURCE."${columns[i].databaseName}"`)
             .join(", ")});
         `
 
