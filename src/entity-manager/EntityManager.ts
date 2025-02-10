@@ -782,7 +782,13 @@ export class EntityManager {
         const mergeQuery = `
             MERGE INTO ${tableName} AS target
             USING (SELECT ${values[0]
-                .map((_, j) => `column${j + 1} as ${columns[j].databaseName}`)
+                .map((_, j) =>
+                    columns[j].type === "jsonb"
+                        ? `PARSE_JSON(column${j + 1}) as ${
+                              columns[j].databaseName
+                          }`
+                        : `column${j + 1} as ${columns[j].databaseName}`,
+                )
                 .join(",")} FROM VALUES ${values
             .map((item) => `(${item.map(() => `?`).join(",")})`)
             .join(",")} ) AS source
