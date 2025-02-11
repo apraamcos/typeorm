@@ -242,26 +242,6 @@ export class SnowflakeDriver implements Driver {
         this.connection = connection
         this.options = connection.options as SnowflakeConnectionOptions
 
-        if (this.options.privateKey) {
-            console.info(1, this.options.privateKey)
-            const privateKey = crypto
-                .createPrivateKey({
-                    key: this.options.privateKey as string,
-                    format: "pem",
-                    passphrase: this.options.password,
-                })
-                .export({
-                    format: "pem",
-                    type: "pkcs8",
-                })
-
-            console.info(2, privateKey)
-
-            this.options.authenticator = "SNOWFLAKE_JWT"
-            this.options.privateKey = privateKey as string
-        }
-
-        console.info(3, JSON.stringify(this.options))
         this.database = this.options.database
         this.schema = this.options.schema
     }
