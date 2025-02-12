@@ -767,14 +767,14 @@ export class EntityManager {
             .join(".")
 
         const primaryKeyColumns = metadata.columns.filter((x) => x.isPrimary)
-        const isGenerated = primaryKeyColumns.some((x) => x.isGenerated)
+        // const isGenerated = primaryKeyColumns.some((x) => x.isGenerated)
 
         const columns: ColumnMetadata[] = []
-        if (isGenerated) {
-            columns.push(...metadata.columns.filter((x) => !x.isPrimary))
-        } else {
-            columns.push(...metadata.columns)
-        }
+        // if (isGenerated) {
+        //     columns.push(...metadata.columns.filter((x) => !x.isPrimary))
+        // } else {
+        columns.push(...metadata.columns)
+        // }
 
         const values = entities.map((entity: any) =>
             columns.map((col) => entity[col.propertyName]),
