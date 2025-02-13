@@ -246,7 +246,10 @@ export class SnowflakeDriver implements Driver {
             this.options.authenticator = "SNOWFLAKE_JWT"
             this.options.privateKey = crypto
                 .createPrivateKey({
-                    key: this.options.privateKey as string,
+                    key: Buffer.from(
+                        this.options.privateKey,
+                        "base64",
+                    ).toString("utf8"),
                     format: "pem",
                     passphrase: this.options.password,
                 })
