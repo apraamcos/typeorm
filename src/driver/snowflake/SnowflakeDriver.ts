@@ -22,6 +22,7 @@ import { MappedColumnTypes } from "../types/MappedColumnTypes"
 import { UpsertType } from "../types/UpsertType"
 import { SnowflakeConnectionOptions } from "./SnowflakeConnectionOptions"
 import { SnowflakeQueryRunner } from "./SnowflakeQueryRunner"
+import crypto from "crypto"
 
 export class SnowflakeDriver implements Driver {
     // -------------------------------------------------------------------------
@@ -241,9 +242,18 @@ export class SnowflakeDriver implements Driver {
         this.connection = connection
         this.options = connection.options as SnowflakeConnectionOptions
 
-        if (this.options.privateKeyPath) {
+        if (this.options.privateKey) {
             this.options.authenticator = "SNOWFLAKE_JWT"
-            this.options.privateKeyPass = this.options.password
+            this.options.privateKey = crypto
+                .createPrivateKey({
+                    key: this.options.privateKey as string,
+                    format: "pem",
+                    passphrase: this.options.password,
+                })
+                .export({
+                    format: "pem",
+                    type: "pkcs8",
+                }) as string
         }
 
         this.database = this.options.database
