@@ -760,6 +760,10 @@ export class EntityManager {
             entities = entityOrEntities
         }
 
+        if (!entities.length) {
+            return { identifiers: [], generatedMaps: [], raw: [] }
+        }
+
         const tableName = this.connection.driver
             .buildTableName(metadata.tableName, metadata.schema)
             .split(".")
