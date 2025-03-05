@@ -392,10 +392,12 @@ export class Repository<Entity extends ObjectLiteral> {
         entityOrEntities:
             | QueryDeepPartialEntity<Entity>
             | QueryDeepPartialEntity<Entity>[],
+        matchedColumns: (keyof Entity)[]
     ): Promise<InsertResult> {
         return this.manager.upsertMerge(
             this.metadata.target as any,
             entityOrEntities,
+            matchedColumns
         )
     }
 

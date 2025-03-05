@@ -39,6 +39,8 @@ import { InstanceChecker } from "../util/InstanceChecker"
 import { ObjectLiteral } from "../common/ObjectLiteral"
 import { PickKeysByType } from "../common/PickKeysByType"
 import { ColumnMetadata } from "../metadata/ColumnMetadata"
+import { PostgresDriver } from "../driver/postgres/PostgresDriver"
+import { SnowflakeDriver } from "../driver/snowflake/SnowflakeDriver"
 
 /**
  * Entity manager supposed to work with any entity, automatically find its repository and call its methods,
@@ -750,6 +752,7 @@ export class EntityManager {
         entityOrEntities:
             | QueryDeepPartialEntity<Entity>
             | QueryDeepPartialEntity<Entity>[],
+        matchedColumns: (keyof Entity)[]
     ): Promise<InsertResult> {
         const metadata = this.connection.getMetadata(target)
 
@@ -770,21 +773,22 @@ export class EntityManager {
             .map((x) => `"${x}"`)
             .join(".")
 
-        const primaryKeyColumns = metadata.columns.filter((x) => x.isPrimary)
-        // const isGenerated = primaryKeyColumns.some((x) => x.isGenerated)
-
+        let columnsToMatch: ColumnMetadata[];
+        if (matchedColumns?.length > 0) {
+            columnsToMatch = metadata.columns.filter((x) => matchedColumns.includes(x.propertyName));
+        } else {
+            columnsToMatch = metadata.columns.filter((x) => x.isPrimary);
+        }
         const columns: ColumnMetadata[] = []
-        // if (isGenerated) {
-        //     columns.push(...metadata.columns.filter((x) => !x.isPrimary))
-        // } else {
         columns.push(...metadata.columns)
-        // }
-
+        const nonGeneratedColumns = metadata.columns.filter((x) => !x.isGenerated && !x.isCreateDate && !x.isUpdateDate&& !x.isDeleteDate);
         const values = entities.map((entity: any) =>
             columns.map((col) => entity[col.propertyName]),
         )
 
-        const mergeQuery = `
+        let mergeQuery: string
+        if (this.connection.driver instanceof SnowflakeDriver) {
+            mergeQuery = `
             MERGE INTO ${tableName} AS TARGET
             USING (SELECT ${values[0]
                 .map((_, j) =>
@@ -797,7 +801,7 @@ export class EntityManager {
                 .join(",")} FROM VALUES ${values
             .map((item) => `(${item.map(() => `?`).join(",")})`)
             .join(",")} ) AS SOURCE
-            ON ${primaryKeyColumns
+            ON ${columnsToMatch
                 .map(
                     (col) =>
                         `TARGET."${col.databaseName}" = SOURCE."${col.databaseName}"`,
@@ -817,6 +821,40 @@ export class EntityManager {
             .map((_, i) => `SOURCE."${columns[i].databaseName}"`)
             .join(", ")});
         `
+        } else if (this.connection.driver instanceof PostgresDriver) {
+            mergeQuery = `
+            MERGE INTO ${tableName} AS TARGET
+            USING 
+            (
+              SELECT 
+              ${values[0].map((_, j) => columns[j].type === "jsonb"
+            ? `PARSE_JSON(COLUMN${j + 1}) AS "${columns[j].databaseName}"`
+            : `COLUMN${j + 1} as "${columns[j].databaseName}"`)
+            .join(",")} 
+            
+            FROM (
+              VALUES 
+                ${values
+            .map((item) => `(${item.map((_, idx) => `$${idx+1}::${columns[idx].type}`).join(",")})`)
+            .join(",")} ) AS T(${values[0].map((_, j) => `COLUMN${j + 1}`).join(",")})
+              ) AS SOURCE
+            ON ${columnsToMatch
+            .map((col) => `TARGET."${col.databaseName}" = SOURCE."${col.databaseName}"`)
+            .join(" AND ")}
+            WHEN MATCHED THEN
+                UPDATE SET ${nonGeneratedColumns
+            .map((col) => `"${col.databaseName}" = SOURCE."${col.databaseName}"`)
+            .join(", ")}
+            WHEN NOT MATCHED THEN
+                INSERT (${nonGeneratedColumns
+            .map((x) => `"${x.databaseName}"`)
+            .join(", ")}) VALUES (
+              ${nonGeneratedColumns
+            .map((_, i) => `SOURCE."${nonGeneratedColumns[i].databaseName}"::${nonGeneratedColumns[i].type}`)
+            .join(", ")});
+        `
+        }
+        
 
         return await this.connection.query(mergeQuery, values.flat())
     }
