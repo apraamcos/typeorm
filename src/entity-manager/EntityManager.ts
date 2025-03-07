@@ -752,7 +752,7 @@ export class EntityManager {
         entityOrEntities:
             | QueryDeepPartialEntity<Entity>
             | QueryDeepPartialEntity<Entity>[],
-        matchedColumns: (keyof Entity)[]
+        matchedColumns?: (keyof Entity)[]
     ): Promise<InsertResult> {
         const metadata = this.connection.getMetadata(target)
 
