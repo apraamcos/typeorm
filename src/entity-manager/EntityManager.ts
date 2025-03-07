@@ -786,7 +786,7 @@ export class EntityManager {
             columns.map((col) => entity[col.propertyName]),
         )
 
-        let mergeQuery: string
+        let mergeQuery: string = `select 1`
         if (this.connection.driver instanceof SnowflakeDriver) {
             mergeQuery = `
             MERGE INTO ${tableName} AS TARGET
@@ -853,6 +853,8 @@ export class EntityManager {
             .map((_, i) => `SOURCE."${nonGeneratedColumns[i].databaseName}"::${nonGeneratedColumns[i].type}`)
             .join(", ")});
         `
+        } else {
+            throw new Error("UpsertMerge is not supported for this driver")
         }
         
 
