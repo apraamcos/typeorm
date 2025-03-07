@@ -834,9 +834,9 @@ export class EntityManager {
             
             FROM (
               VALUES 
-                ${values
-            .map((item) => `(${item.map((_, idx) => `$${idx+1}::${columns[idx].type}`).join(",")})`)
-            .join(",")} ) AS T(${values[0].map((_, j) => `COLUMN${j + 1}`).join(",")})
+                ${values.map((row, rowIdx) => `(${row.map((col, colIdx, cols) => 
+                     `$${(colIdx + 1) + rowIdx * cols.length}::${columns[colIdx].type}`).join(",")})`)
+                .join(",")} ) AS T(${values[0].map((_, j) => `COLUMN${j + 1}`).join(",")})
               ) AS SOURCE
             ON ${columnsToMatch
             .map((col) => `TARGET."${col.databaseName}" = SOURCE."${col.databaseName}"`)
