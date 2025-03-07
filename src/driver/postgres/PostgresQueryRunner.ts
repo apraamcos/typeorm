@@ -252,7 +252,7 @@ export class PostgresQueryRunner
         // }
 
         const maxRetryDuration =
-            this.driver.options.extra?.maxRetryDuration ?? 1 * 60 * 1000
+            this.driver.options.extra?.maxRetryDuration ?? 3 * 60 * 1000
 
         const broadcasterResult = new BroadcasterResult()
 
@@ -338,6 +338,7 @@ export class PostgresQueryRunner
                 err.code === "ECONNREFUSED" ||
                 err.code === "ECONNRESET" ||
                 err.code === "ETIMEDOUT" ||
+                err.code === "40001" ||
                 err.message === "the database system is in recovery mode" ||
                 err.message === "the database system is starting up" ||
                 (err.message ?? "")
