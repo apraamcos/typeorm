@@ -752,7 +752,7 @@ export class EntityManager {
         entityOrEntities:
             | QueryDeepPartialEntity<Entity>
             | QueryDeepPartialEntity<Entity>[],
-        matchedColumns?: (keyof Entity)[]
+        matchedColumns: (keyof Entity)[] = []
     ): Promise<InsertResult> {
         const metadata = this.connection.getMetadata(target)
 
@@ -774,7 +774,7 @@ export class EntityManager {
             .join(".")
 
         let columnsToMatch: ColumnMetadata[];
-        if (matchedColumns?.length > 0) {
+        if (matchedColumns.length > 0) {
             columnsToMatch = metadata.columns.filter((x) => matchedColumns.includes(x.propertyName));
         } else {
             columnsToMatch = metadata.columns.filter((x) => x.isPrimary);

@@ -377,7 +377,7 @@ export class BaseEntity {
         entityOrEntities:
             | QueryDeepPartialEntity<T>
             | QueryDeepPartialEntity<T>[],
-        matchedColumns: (keyof T)[],
+        matchedColumns: (keyof T)[] = [],
     ): Promise<InsertResult> {
         return this.getRepository<T>().upsertMerge(entityOrEntities, matchedColumns)
     }
