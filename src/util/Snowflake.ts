@@ -8,6 +8,9 @@ export const formatSnowflakeParameter = (arr?: any[]): any[] | undefined => {
               if (item instanceof Date) {
                   return item
               }
+              if (Array.isArray(item)) {
+                return formatSnowflakeParameter(item)
+              }
               if (typeof item === "object") {
                   return JSON.stringify(item)
               }
