@@ -1,0 +1,13 @@
+[
+  {
+    "skip": false,
+    "name": "oracle",
+    "type": "oracle",
+    "host": "localhost",
+    "port": 1521,
+    "serviceName": "FREEPDB1",
+    "username": "typeorm",
+    "password": "oracle",
+    "logging": false
+  }
+]
