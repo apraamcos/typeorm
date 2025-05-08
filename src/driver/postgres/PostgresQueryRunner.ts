@@ -325,7 +325,10 @@ export class PostgresQueryRunner
 
             return result
         } catch (err) {
+            console.info("try to catch connection error start")
             console.info(`Query error, `, err)
+            console.info(`Query code, `, err.code)
+            console.info(`Query message, `, err.message)
             if (err.message === "Connection terminated unexpectedly") {
                 console.info(err.message)
                 return await this.query(
@@ -340,18 +343,15 @@ export class PostgresQueryRunner
                 err.code === "ETIMEDOUT" ||
                 err.code === "40001" ||
                 err.message === "the database system is in recovery mode" ||
-                err.message === "the database system is starting up" ||
-                (err.message ?? "")
-                    .toLowerCase()
-                    .includes(
-                        "canceling statement due to conflict with recovery",
-                    )
+                err.message === "the database system is starting up" 
             ) {
+                console.log("retry duration:: ", retryDuration)
                 if ((retryDuration ?? 0) > maxRetryDuration) {
                     console.info("Max retry period reached")
                     throw new QueryFailedError(query, parameters, err)
-                }
-                console.info(err.message)
+                } 
+                console.info("not reach max duration ", err.code)
+                console.info("not reach max duration ", err.message)
                 await sleep(5000)
                 return await this.query(
                     query,
@@ -360,6 +360,8 @@ export class PostgresQueryRunner
                     true,
                     (retryDuration ?? 0) + 5000,
                 )
+            } else {
+                console.info("try to catch connection error else, ", err)
             }
             this.driver.connection.logger.logQueryError(
                 err,
@@ -379,6 +381,7 @@ export class PostgresQueryRunner
 
             throw new QueryFailedError(query, parameters, err)
         } finally {
+            console.info("try to catch connection error finally")
             await broadcasterResult.wait()
         }
     }
