@@ -377,10 +377,7 @@ export class PostgresQueryRunner
             )
 
             throw new QueryFailedError(query, parameters, err)
-        } finally {
-            console.info("try to catch connection error finally")
-            await broadcasterResult.wait()
-        }
+        } 
     }
 
     /**

@@ -381,22 +381,35 @@ export class PostgresDriver implements Driver {
      * Makes any action after connection (e.g. create extensions in Postgres driver).
      */
     async afterConnect(): Promise<void> {
+        console.info("PostgresDriver afterConnect start")
         const extensionsMetadata = await this.checkMetadataForExtensions()
+        console.info("PostgresDriver afterConnect extensionsMetadata", extensionsMetadata)
         const [connection, release] = await this.obtainMasterConnection()
-
+        console.info("PostgresDriver afterConnect obtainMasterConnection", connection, release)
         const installExtensions =
             this.options.installExtensions === undefined ||
             this.options.installExtensions
+        console.info("installExtensions", installExtensions)
         if (installExtensions && extensionsMetadata.hasExtensions) {
+            console.info("inside")
             await this.enableExtensions(extensionsMetadata, connection)
         }
+        console.info("out")
 
         this.isGeneratedColumnsSupported = VersionUtils.isGreaterOrEqual(
             this.version,
             "12.0",
         )
+        console.log("check version", this.isGeneratedColumnsSupported)
 
-        await release()
+        try {
+            await release()
+            console.info("Finish release")
+        } catch (error) {
+            console.info("PostgresDriver afterConnect release error", error)
+            throw error
+        }
+        
     }
 
     protected async enableExtensions(extensionsMetadata: any, connection: any) {
