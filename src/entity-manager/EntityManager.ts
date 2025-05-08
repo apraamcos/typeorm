@@ -172,6 +172,8 @@ export class EntityManager {
 
     /**
      * Executes raw SQL query and returns raw database results.
+     *
+     * @see [Official docs](https://typeorm.io/entity-manager-api) for examples.
      */
     async query<T = any>(query: string, parameters?: any[]): Promise<T> {
         return this.connection.query(query, parameters, this.queryRunner)
@@ -1459,7 +1461,7 @@ export class EntityManager {
         if (isNaN(Number(value)))
             throw new TypeORMError(`Value "${value}" is not a number.`)
 
-        // convert possible embeded path "social.likes" into object { social: { like: () => value } }
+        // convert possible embedded path "social.likes" into object { social: { like: () => value } }
         const values: QueryDeepPartialEntity<Entity> = propertyPath
             .split(".")
             .reduceRight(
@@ -1496,7 +1498,7 @@ export class EntityManager {
         if (isNaN(Number(value)))
             throw new TypeORMError(`Value "${value}" is not a number.`)
 
-        // convert possible embeded path "social.likes" into object { social: { like: () => value } }
+        // convert possible embedded path "social.likes" into object { social: { like: () => value } }
         const values: QueryDeepPartialEntity<Entity> = propertyPath
             .split(".")
             .reduceRight(

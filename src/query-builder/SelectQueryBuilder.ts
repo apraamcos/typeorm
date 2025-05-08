@@ -4,6 +4,7 @@ import { ObjectLiteral } from "../common/ObjectLiteral"
 import { DriverUtils } from "../driver/DriverUtils"
 import { AuroraMysqlDriver } from "../driver/aurora-mysql/AuroraMysqlDriver"
 import { MysqlDriver } from "../driver/mysql/MysqlDriver"
+import { SqlServerDriver } from "../driver/sqlserver/SqlServerDriver"
 import { TypeORMError } from "../error"
 import { EntityNotFoundError } from "../error/EntityNotFoundError"
 import { EntityPropertyNotFoundError } from "../error/EntityPropertyNotFoundError"
@@ -2882,11 +2883,6 @@ export class SelectQueryBuilder<Entity extends ObjectLiteral>
                     })
                 })
             } else {
-                if (column.isVirtualProperty) {
-                    // Do not add unselected virtual properties to final select
-                    return
-                }
-
                 finalSelects.push({
                     selection: selectionPath,
                     aliasName: DriverUtils.buildAlias(
@@ -4261,7 +4257,7 @@ export class SelectQueryBuilder<Entity extends ObjectLiteral>
                 if (column) {
                     let aliasPath = `${alias}.${propertyPath}`
                     if (column.isVirtualProperty && column.query) {
-                        aliasPath = `(${column.query(alias)})`
+                        aliasPath = `(${column.query(this.escape(alias))})`
                     }
                     // const parameterName = alias + "_" + propertyPath.split(".").join("_") + "_" + parameterIndex;
 
@@ -4270,14 +4266,35 @@ export class SelectQueryBuilder<Entity extends ObjectLiteral>
                     if (InstanceChecker.isEqualOperator(where[key])) {
                         parameterValue = where[key].value
                     }
+
                     if (column.transformer) {
-                        parameterValue instanceof FindOperator
-                            ? parameterValue.transformValue(column.transformer)
-                            : (parameterValue =
-                                  ApplyValueTransformers.transformTo(
-                                      column.transformer,
-                                      parameterValue,
-                                  ))
+                        if (parameterValue instanceof FindOperator) {
+                            parameterValue.transformValue(column.transformer)
+                        } else {
+                            parameterValue = ApplyValueTransformers.transformTo(
+                                column.transformer,
+                                parameterValue,
+                            )
+                        }
+                    }
+
+                    // MSSQL requires parameters to carry extra type information
+                    if (this.connection.driver.options.type === "mssql") {
+                        const driver = this.connection.driver as SqlServerDriver
+                        if (parameterValue instanceof FindOperator) {
+                            if (parameterValue.type !== "raw") {
+                                parameterValue.transformValue({
+                                    to: (v) =>
+                                        driver.parametrizeValue(column, v),
+                                    from: (v) => v,
+                                })
+                            }
+                        } else {
+                            parameterValue = driver.parametrizeValue(
+                                column,
+                                parameterValue,
+                            )
+                        }
                     }
 
                     // if (parameterValue === null) {
