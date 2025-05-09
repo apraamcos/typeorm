@@ -344,37 +344,43 @@ export class PostgresDriver implements Driver {
      * either create a pool and create connection when needed.
      */
     async connect(): Promise<void> {
-        if (this.options.replication) {
-            this.slaves = await Promise.all(
-                this.options.replication.slaves.map((slave) => {
-                    return this.createPool(this.options, slave)
-                }),
-            )
-            this.master = await this.createPool(
-                this.options,
-                this.options.replication.master,
-            )
-        } else {
-            this.master = await this.createPool(this.options, this.options)
+        try {
+            if (this.options.replication) {
+                this.slaves = await Promise.all(
+                    this.options.replication.slaves.map((slave) => {
+                        return this.createPool(this.options, slave)
+                    }),
+                )
+                this.master = await this.createPool(
+                    this.options,
+                    this.options.replication.master,
+                )
+            } else {
+                this.master = await this.createPool(this.options, this.options)
+            }
+    
+            const queryRunner = this.createQueryRunner("master")
+    
+            this.version = await queryRunner.getVersion()
+    
+            if (!this.database) {
+                this.database = await queryRunner.getCurrentDatabase()
+            }
+    
+            if (!this.searchSchema) {
+                this.searchSchema = await queryRunner.getCurrentSchema()
+            }
+    
+            await queryRunner.release()
+    
+            if (!this.schema) {
+                this.schema = this.searchSchema
+            }
+        } catch (error) {
+            console.info("try connect error", error)
+            throw error
         }
-
-        const queryRunner = this.createQueryRunner("master")
-
-        this.version = await queryRunner.getVersion()
-
-        if (!this.database) {
-            this.database = await queryRunner.getCurrentDatabase()
-        }
-
-        if (!this.searchSchema) {
-            this.searchSchema = await queryRunner.getCurrentSchema()
-        }
-
-        await queryRunner.release()
-
-        if (!this.schema) {
-            this.schema = this.searchSchema
-        }
+        
     }
 
     /**
