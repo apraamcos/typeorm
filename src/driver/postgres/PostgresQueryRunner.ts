@@ -256,22 +256,18 @@ export class PostgresQueryRunner
         try {
             const databaseConnection = await this.connect(reconnect)
 
-            this.broadcaster.broadcastBeforeQueryEvent(
-                broadcasterResult,
-                query,
-                parameters,
-            )
+            await this.broadcaster.broadcast("BeforeQuery", query, parameters)
 
             this.driver.connection.logger.logQuery(query, parameters, this)
 
-            const queryStartTime = +new Date()
+            const queryStartTime = Date.now()
 
             const raw = await databaseConnection.query(query, parameters)
 
             // log slow queries if maxQueryExecution time is set
             const maxQueryExecutionTime =
                 this.driver.options.maxQueryExecutionTime
-            const queryEndTime = +new Date()
+            const queryEndTime = Date.now()
             const queryExecutionTime = queryEndTime - queryStartTime
 
             this.broadcaster.broadcastAfterQueryEvent(
@@ -336,12 +332,14 @@ export class PostgresQueryRunner
                 err.code === "ETIMEDOUT" ||
                 err.code === "40001" ||
                 err.message === "the database system is in recovery mode" ||
-                err.message === "the database system is starting up" 
+                err.message === "the database system is starting up"
             ) {
                 console.log("retry duration:: ", retryDuration)
                 if ((retryDuration ?? 0) > maxRetryDuration) {
                     throw new QueryFailedError(query, parameters, err)
-                } 
+                }
+                console.info("not reach max duration ", err.code)
+                console.info("not reach max duration ", err.message)
                 await sleep(5000)
                 return await this.query(
                     query,
@@ -370,7 +368,7 @@ export class PostgresQueryRunner
             )
 
             throw new QueryFailedError(query, parameters, err)
-        } 
+        }
     }
 
     /**
@@ -4199,10 +4197,20 @@ export class PostgresQueryRunner
      * Loads Postgres version.
      */
     async getVersion(): Promise<string> {
+        // we use `SELECT version()` instead of `SHOW server_version` or `SHOW server_version_num`
+        // to maintain compatability with Amazon Redshift.
+        //
+        // see:
+        //  - https://github.com/typeorm/typeorm/pull/9319
+        //  - https://docs.aws.amazon.com/redshift/latest/dg/c_unsupported-postgresql-functions.html
         const result: [{ version: string }] = await this.query(
             `SELECT version()`,
         )
-        return result[0].version.replace(/^PostgreSQL ([\d.]+) .*$/, "$1")
+
+        // Examples:
+        // Postgres: "PostgreSQL 14.10 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 8.5.0 20210514 (Red Hat 8.5.0-20), 64-bit"
+        // Yugabyte: "PostgreSQL 11.2-YB-2.18.1.0-b0 on x86_64-pc-linux-gnu, compiled by clang version 15.0.3 (https://github.com/yugabyte/llvm-project.git 0b8d1183745fd3998d8beffeec8cbe99c1b20529), 64-bit"
+        return result[0].version.replace(/^PostgreSQL ([\d.]+).*$/, "$1")
     }
 
     /**
@@ -4326,7 +4334,7 @@ export class PostgresQueryRunner
     ): Query {
         if (!enumName) enumName = this.buildEnumName(table, column)
         const enumValues = column
-            .enum!.map((value) => `'${value.replace("'", "''")}'`)
+            .enum!.map((value) => `'${value.replaceAll("'", "''")}'`)
             .join(", ")
         return new Query(`CREATE TYPE ${enumName} AS ENUM(${enumValues})`)
     }
