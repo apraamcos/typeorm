@@ -41,6 +41,8 @@ import { PickKeysByType } from "../common/PickKeysByType"
 import { ColumnMetadata } from "../metadata/ColumnMetadata"
 import { PostgresDriver } from "../driver/postgres/PostgresDriver"
 import { SnowflakeDriver } from "../driver/snowflake/SnowflakeDriver"
+import { buildSqlTag } from "../util/SqlTagUtils"
+import { OrmUtils } from "../util/OrmUtils"
 
 /**
  * Entity manager supposed to work with any entity, automatically find its repository and call its methods,
@@ -177,6 +179,26 @@ export class EntityManager {
      */
     async query<T = any>(query: string, parameters?: any[]): Promise<T> {
         return this.connection.query(query, parameters, this.queryRunner)
+    }
+
+    /**
+     * Tagged template function that executes raw SQL query and returns raw database results.
+     * Template expressions are automatically transformed into database parameters.
+     * Raw query execution is supported only by relational databases (MongoDB is not supported).
+     * Note: Don't call this as a regular function, it is meant to be used with backticks to tag a template literal.
+     * Example: entityManager.sql`SELECT * FROM table_name WHERE id = ${id}`
+     */
+    async sql<T = any>(
+        strings: TemplateStringsArray,
+        ...values: unknown[]
+    ): Promise<T> {
+        const { query, parameters } = buildSqlTag({
+            driver: this.connection.driver,
+            strings: strings,
+            expressions: values,
+        })
+
+        return await this.query(query, parameters)
     }
 
     /**
@@ -754,7 +776,7 @@ export class EntityManager {
         entityOrEntities:
             | QueryDeepPartialEntity<Entity>
             | QueryDeepPartialEntity<Entity>[],
-        matchedColumns: (keyof Entity)[] = []
+        matchedColumns: (keyof Entity)[] = [],
     ): Promise<InsertResult> {
         const metadata = this.connection.getMetadata(target)
 
@@ -775,15 +797,23 @@ export class EntityManager {
             .map((x) => `"${x}"`)
             .join(".")
 
-        let columnsToMatch: ColumnMetadata[];
+        let columnsToMatch: ColumnMetadata[]
         if (matchedColumns.length > 0) {
-            columnsToMatch = metadata.columns.filter((x) => matchedColumns.includes(x.propertyName));
+            columnsToMatch = metadata.columns.filter((x) =>
+                matchedColumns.includes(x.propertyName),
+            )
         } else {
-            columnsToMatch = metadata.columns.filter((x) => x.isPrimary);
+            columnsToMatch = metadata.columns.filter((x) => x.isPrimary)
         }
         const columns: ColumnMetadata[] = []
         columns.push(...metadata.columns)
-        const nonGeneratedColumns = metadata.columns.filter((x) => !x.isGenerated && !x.isCreateDate && !x.isUpdateDate&& !x.isDeleteDate);
+        const nonGeneratedColumns = metadata.columns.filter(
+            (x) =>
+                !x.isGenerated &&
+                !x.isCreateDate &&
+                !x.isUpdateDate &&
+                !x.isDeleteDate,
+        )
         const values = entities.map((entity: any) =>
             columns.map((col) => entity[col.propertyName]),
         )
@@ -801,8 +831,8 @@ export class EntityManager {
                         : `COLUMN${j + 1} as "${columns[j].databaseName}"`,
                 )
                 .join(",")} FROM VALUES ${values
-            .map((item) => `(${item.map(() => `?`).join(",")})`)
-            .join(",")} ) AS SOURCE
+                .map((item) => `(${item.map(() => `?`).join(",")})`)
+                .join(",")} ) AS SOURCE
             ON ${columnsToMatch
                 .map(
                     (col) =>
@@ -820,8 +850,8 @@ export class EntityManager {
                 INSERT (${columns
                     .map((x) => `"${x.databaseName}"`)
                     .join(", ")}) VALUES (${columns
-            .map((_, i) => `SOURCE."${columns[i].databaseName}"`)
-            .join(", ")});
+                .map((_, i) => `SOURCE."${columns[i].databaseName}"`)
+                .join(", ")});
         `
         } else if (this.connection.driver instanceof PostgresDriver) {
             mergeQuery = `
@@ -829,36 +859,61 @@ export class EntityManager {
             USING 
             (
               SELECT 
-              ${values[0].map((_, j) => columns[j].type === "jsonb"
-            ? `PARSE_JSON(COLUMN${j + 1}) AS "${columns[j].databaseName}"`
-            : `COLUMN${j + 1} as "${columns[j].databaseName}"`)
-            .join(",")} 
+              ${values[0]
+                  .map((_, j) =>
+                      columns[j].type === "jsonb"
+                          ? `PARSE_JSON(COLUMN${j + 1}) AS "${
+                                columns[j].databaseName
+                            }"`
+                          : `COLUMN${j + 1} as "${columns[j].databaseName}"`,
+                  )
+                  .join(",")} 
             
             FROM (
               VALUES 
-                ${values.map((row, rowIdx) => `(${row.map((col, colIdx, cols) => 
-                     `$${(colIdx + 1) + rowIdx * cols.length}::${columns[colIdx].type}`).join(",")})`)
-                .join(",")} ) AS T(${values[0].map((_, j) => `COLUMN${j + 1}`).join(",")})
+                ${values
+                    .map(
+                        (row, rowIdx) =>
+                            `(${row
+                                .map(
+                                    (col, colIdx, cols) =>
+                                        `$${
+                                            colIdx + 1 + rowIdx * cols.length
+                                        }::${columns[colIdx].type}`,
+                                )
+                                .join(",")})`,
+                    )
+                    .join(",")} ) AS T(${values[0]
+                .map((_, j) => `COLUMN${j + 1}`)
+                .join(",")})
               ) AS SOURCE
             ON ${columnsToMatch
-            .map((col) => `TARGET."${col.databaseName}" = SOURCE."${col.databaseName}"`)
-            .join(" AND ")}
+                .map(
+                    (col) =>
+                        `TARGET."${col.databaseName}" = SOURCE."${col.databaseName}"`,
+                )
+                .join(" AND ")}
             WHEN MATCHED THEN
                 UPDATE SET ${nonGeneratedColumns
-            .map((col) => `"${col.databaseName}" = SOURCE."${col.databaseName}"`)
-            .join(", ")}
+                    .map(
+                        (col) =>
+                            `"${col.databaseName}" = SOURCE."${col.databaseName}"`,
+                    )
+                    .join(", ")}
             WHEN NOT MATCHED THEN
                 INSERT (${nonGeneratedColumns
-            .map((x) => `"${x.databaseName}"`)
-            .join(", ")}) VALUES (
+                    .map((x) => `"${x.databaseName}"`)
+                    .join(", ")}) VALUES (
               ${nonGeneratedColumns
-            .map((_, i) => `SOURCE."${nonGeneratedColumns[i].databaseName}"::${nonGeneratedColumns[i].type}`)
-            .join(", ")});
+                  .map(
+                      (_, i) =>
+                          `SOURCE."${nonGeneratedColumns[i].databaseName}"::${nonGeneratedColumns[i].type}`,
+                  )
+                  .join(", ")});
         `
         } else {
             throw new Error("UpsertMerge is not supported for this driver")
         }
-        
 
         return await this.connection.query(mergeQuery, values.flat())
     }
@@ -885,12 +940,7 @@ export class EntityManager {
         partialEntity: QueryDeepPartialEntity<Entity>,
     ): Promise<UpdateResult> {
         // if user passed empty criteria or empty list of criterias, then throw an error
-        if (
-            criteria === undefined ||
-            criteria === null ||
-            criteria === "" ||
-            (Array.isArray(criteria) && criteria.length === 0)
-        ) {
+        if (OrmUtils.isCriteriaNullOrEmpty(criteria)) {
             return Promise.reject(
                 new TypeORMError(
                     `Empty criteria(s) are not allowed for the update method.`,
@@ -898,12 +948,7 @@ export class EntityManager {
             )
         }
 
-        if (
-            typeof criteria === "string" ||
-            typeof criteria === "number" ||
-            criteria instanceof Date ||
-            Array.isArray(criteria)
-        ) {
+        if (OrmUtils.isPrimitiveCriteria(criteria)) {
             return this.createQueryBuilder()
                 .update(target)
                 .set(partialEntity)
@@ -939,12 +984,7 @@ export class EntityManager {
             | any,
     ): Promise<DeleteResult> {
         // if user passed empty criteria or empty list of criterias, then throw an error
-        if (
-            criteria === undefined ||
-            criteria === null ||
-            criteria === "" ||
-            (Array.isArray(criteria) && criteria.length === 0)
-        ) {
+        if (OrmUtils.isCriteriaNullOrEmpty(criteria)) {
             return Promise.reject(
                 new TypeORMError(
                     `Empty criteria(s) are not allowed for the delete method.`,
@@ -952,12 +992,7 @@ export class EntityManager {
             )
         }
 
-        if (
-            typeof criteria === "string" ||
-            typeof criteria === "number" ||
-            criteria instanceof Date ||
-            Array.isArray(criteria)
-        ) {
+        if (OrmUtils.isPrimitiveCriteria(criteria)) {
             return this.createQueryBuilder()
                 .delete()
                 .from(targetOrEntity)
@@ -993,12 +1028,7 @@ export class EntityManager {
             | any,
     ): Promise<UpdateResult> {
         // if user passed empty criteria or empty list of criterias, then throw an error
-        if (
-            criteria === undefined ||
-            criteria === null ||
-            criteria === "" ||
-            (Array.isArray(criteria) && criteria.length === 0)
-        ) {
+        if (OrmUtils.isCriteriaNullOrEmpty(criteria)) {
             return Promise.reject(
                 new TypeORMError(
                     `Empty criteria(s) are not allowed for the delete method.`,
@@ -1006,12 +1036,7 @@ export class EntityManager {
             )
         }
 
-        if (
-            typeof criteria === "string" ||
-            typeof criteria === "number" ||
-            criteria instanceof Date ||
-            Array.isArray(criteria)
-        ) {
+        if (OrmUtils.isPrimitiveCriteria(criteria)) {
             return this.createQueryBuilder()
                 .softDelete()
                 .from(targetOrEntity)
@@ -1047,12 +1072,7 @@ export class EntityManager {
             | any,
     ): Promise<UpdateResult> {
         // if user passed empty criteria or empty list of criterias, then throw an error
-        if (
-            criteria === undefined ||
-            criteria === null ||
-            criteria === "" ||
-            (Array.isArray(criteria) && criteria.length === 0)
-        ) {
+        if (OrmUtils.isCriteriaNullOrEmpty(criteria)) {
             return Promise.reject(
                 new TypeORMError(
                     `Empty criteria(s) are not allowed for the delete method.`,
@@ -1060,12 +1080,7 @@ export class EntityManager {
             )
         }
 
-        if (
-            typeof criteria === "string" ||
-            typeof criteria === "number" ||
-            criteria instanceof Date ||
-            Array.isArray(criteria)
-        ) {
+        if (OrmUtils.isPrimitiveCriteria(criteria)) {
             return this.createQueryBuilder()
                 .restore()
                 .from(targetOrEntity)
