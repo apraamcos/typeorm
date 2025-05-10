@@ -322,12 +322,8 @@ export class PostgresQueryRunner
 
             return result
         } catch (err) {
-            console.info("try to catch connection error start")
-            console.info(`Query error, `, err)
-            console.info(`Query code, `, err.code)
-            console.info(`Query message, `, err.message)
+            console.info("try to catch connection error start", err.code, err.message)
             if (err.message === "Connection terminated unexpectedly") {
-                console.info(err.message)
                 return await this.query(
                     query,
                     parameters,
@@ -344,11 +340,8 @@ export class PostgresQueryRunner
             ) {
                 console.log("retry duration:: ", retryDuration)
                 if ((retryDuration ?? 0) > maxRetryDuration) {
-                    console.info("Max retry period reached")
                     throw new QueryFailedError(query, parameters, err)
                 } 
-                console.info("not reach max duration ", err.code)
-                console.info("not reach max duration ", err.message)
                 await sleep(5000)
                 return await this.query(
                     query,
