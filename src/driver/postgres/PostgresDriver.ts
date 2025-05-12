@@ -28,6 +28,8 @@ import { View } from "../../schema-builder/view/View"
 import { TableForeignKey } from "../../schema-builder/table/TableForeignKey"
 import { InstanceChecker } from "../../util/InstanceChecker"
 import { UpsertType } from "../types/UpsertType"
+import type { Pool } from "pg"
+import { sleep } from "./sleep"
 
 /**
  * Organizes communication with PostgreSQL DBMS.
@@ -338,12 +340,13 @@ export class PostgresDriver implements Driver {
     // Public Implemented Methods
     // -------------------------------------------------------------------------
 
+    maxRetryDuration = 3 * 60 * 1000
     /**
      * Performs connection to the database.
      * Based on pooling options, it can either create connection immediately,
      * either create a pool and create connection when needed.
      */
-    async connect(): Promise<void> {
+    async connect(retryDuration?: number): Promise<void> {
         try {
             if (this.options.replication) {
                 this.slaves = await Promise.all(
@@ -358,29 +361,49 @@ export class PostgresDriver implements Driver {
             } else {
                 this.master = await this.createPool(this.options, this.options)
             }
-    
+
             const queryRunner = this.createQueryRunner("master")
-    
+
             this.version = await queryRunner.getVersion()
-    
+
             if (!this.database) {
                 this.database = await queryRunner.getCurrentDatabase()
             }
-    
+
             if (!this.searchSchema) {
                 this.searchSchema = await queryRunner.getCurrentSchema()
             }
-    
+
             await queryRunner.release()
-    
+
             if (!this.schema) {
                 this.schema = this.searchSchema
             }
-        } catch (error) {
-            console.info("try connect error", error)
-            throw error
+        } catch (err) {
+            if (err.message === "Connection terminated unexpectedly") {
+                return await this.connect()
+            } else if (
+                err.code === "ECONNREFUSED" ||
+                err.code === "ECONNRESET" ||
+                err.code === "ETIMEDOUT" ||
+                err.code === "40001" ||
+                err.message === "the database system is in recovery mode" ||
+                err.message === "the database system is starting up"
+            ) {
+                console.log("retry duration:: ", retryDuration)
+                if ((retryDuration ?? 0) > this.maxRetryDuration) {
+                    console.info(
+                        "Exceeded maximum retry duration in connect ",
+                        err,
+                    )
+                    throw err
+                }
+                await sleep(5000)
+                return await this.connect((retryDuration ?? 0) + 5000)
+            } else {
+                console.info("Unhandled error in connect ", err)
+            }
         }
-        
     }
 
     /**
@@ -396,7 +419,7 @@ export class PostgresDriver implements Driver {
             if (installExtensions && extensionsMetadata.hasExtensions) {
                 await this.enableExtensions(extensionsMetadata, connection)
             }
-    
+
             this.isGeneratedColumnsSupported = VersionUtils.isGreaterOrEqual(
                 this.version,
                 "12.0",
@@ -406,7 +429,6 @@ export class PostgresDriver implements Driver {
             console.info("PostgresDriver afterConnect release error", error)
             throw error
         }
-        
     }
 
     protected async enableExtensions(extensionsMetadata: any, connection: any) {
@@ -1521,7 +1543,7 @@ export class PostgresDriver implements Driver {
         }
 
         // create a connection pool
-        const pool = new this.postgres.Pool(connectionOptions)
+        const pool = new this.postgres.Pool(connectionOptions) as Pool
 
         const poolErrorHandler =
             options.poolErrorHandler ||

@@ -248,9 +248,6 @@ export class PostgresQueryRunner
         //     throw new QueryRunnerAlreadyReleasedError()
         // }
 
-        const maxRetryDuration =
-            this.driver.options.extra?.maxRetryDuration ?? 3 * 60 * 1000
-
         const broadcasterResult = new BroadcasterResult()
 
         try {
@@ -318,7 +315,6 @@ export class PostgresQueryRunner
 
             return result
         } catch (err) {
-            console.info("try to catch connection error start", err.code, err.message)
             if (err.message === "Connection terminated unexpectedly") {
                 return await this.query(
                     query,
@@ -335,11 +331,13 @@ export class PostgresQueryRunner
                 err.message === "the database system is starting up"
             ) {
                 console.log("retry duration:: ", retryDuration)
-                if ((retryDuration ?? 0) > maxRetryDuration) {
+                if ((retryDuration ?? 0) > this.driver.maxRetryDuration) {
+                    console.info(
+                        "Exceeded maximum retry duration in query ",
+                        err,
+                    )
                     throw new QueryFailedError(query, parameters, err)
                 }
-                console.info("not reach max duration ", err.code)
-                console.info("not reach max duration ", err.message)
                 await sleep(5000)
                 return await this.query(
                     query,
@@ -349,7 +347,7 @@ export class PostgresQueryRunner
                     (retryDuration ?? 0) + 5000,
                 )
             } else {
-                console.info("try to catch connection error else, ", err)
+                console.info("Unhandled error in query ", err)
             }
             this.driver.connection.logger.logQueryError(
                 err,
