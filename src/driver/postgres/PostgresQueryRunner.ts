@@ -328,7 +328,12 @@ export class PostgresQueryRunner
                 err.code === "ETIMEDOUT" ||
                 err.code === "40001" ||
                 err.message === "the database system is in recovery mode" ||
-                err.message === "the database system is starting up"
+                err.message === "the database system is starting up" ||
+                (err.message ?? "")
+                    .toLowerCase()
+                    .includes(
+                        "canceling statement due to conflict with recovery",
+                    )
             ) {
                 console.log("retry duration:: ", retryDuration)
                 if ((retryDuration ?? 0) > this.driver.maxRetryDuration) {
