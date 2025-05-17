@@ -250,9 +250,9 @@ export class PostgresQueryRunner
 
         const broadcasterResult = new BroadcasterResult()
 
-        try {
-            const databaseConnection = await this.connect(reconnect)
+        const databaseConnection = await this.connect(reconnect)
 
+        try {
             await this.broadcaster.broadcast("BeforeQuery", query, parameters)
 
             this.driver.connection.logger.logQuery(query, parameters, this)
