@@ -335,7 +335,6 @@ export class PostgresQueryRunner
                         "canceling statement due to conflict with recovery",
                     )
             ) {
-                console.log("retry duration:: ", retryDuration)
                 if ((retryDuration ?? 0) > this.driver.maxRetryDuration) {
                     console.info(
                         "Exceeded maximum retry duration in query ",

@@ -395,7 +395,6 @@ export class PostgresDriver implements Driver {
                         "canceling statement due to conflict with recovery",
                     )
             ) {
-                console.log("retry duration:: ", retryDuration)
                 if ((retryDuration ?? 0) > this.maxRetryDuration) {
                     console.info(
                         "Exceeded maximum retry duration in connect ",
