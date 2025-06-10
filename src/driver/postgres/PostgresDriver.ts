@@ -387,6 +387,7 @@ export class PostgresDriver implements Driver {
                 err.code === "ECONNRESET" ||
                 err.code === "ETIMEDOUT" ||
                 err.code === "40001" ||
+                err.code === "58P01" ||
                 err.message === "the database system is in recovery mode" ||
                 err.message === "the database system is starting up" ||
                 (err.message ?? "")
