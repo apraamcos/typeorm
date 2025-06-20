@@ -380,8 +380,9 @@ export class PostgresDriver implements Driver {
                 this.schema = this.searchSchema
             }
         } catch (err) {
-            if (err.message === "Connection terminated unexpectedly") {
-                return await this.connect()
+            if (err.message.includes("Connection terminated unexpectedly")) {
+                await sleep(500)
+                return await this.connect((retryDuration ?? 0) + 5000)
             } else if (
                 err.code === "ECONNREFUSED" ||
                 err.code === "ECONNRESET" ||
@@ -407,6 +408,7 @@ export class PostgresDriver implements Driver {
                 return await this.connect((retryDuration ?? 0) + 5000)
             } else {
                 console.info("Unhandled error in connect ", err)
+                throw err
             }
         }
     }

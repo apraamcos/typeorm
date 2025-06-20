@@ -315,12 +315,14 @@ export class PostgresQueryRunner
 
             return result
         } catch (err) {
-            if (err.message === "Connection terminated unexpectedly") {
+            if (err.message.includes("Connection terminated unexpectedly")) {
+                await sleep(500)
                 return await this.query(
                     query,
                     parameters,
                     useStructuredResult,
                     true,
+                    (retryDuration ?? 0) + 5000,
                 )
             } else if (
                 err.code === "ECONNREFUSED" ||
