@@ -322,7 +322,7 @@ export class PostgresQueryRunner
                     parameters,
                     useStructuredResult,
                     true,
-                    (retryDuration ?? 0) + 5000,
+                    (retryDuration ?? 0) + 500,
                 )
             } else if (
                 err.code === "ECONNREFUSED" ||

@@ -382,7 +382,7 @@ export class PostgresDriver implements Driver {
         } catch (err) {
             if (err.message.includes("Connection terminated unexpectedly")) {
                 await sleep(500)
-                return await this.connect((retryDuration ?? 0) + 5000)
+                return await this.connect((retryDuration ?? 0) + 500)
             } else if (
                 err.code === "ECONNREFUSED" ||
                 err.code === "ECONNRESET" ||
