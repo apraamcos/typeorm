@@ -1575,7 +1575,7 @@ export class PostgresDriver implements Driver {
                 }
             }
 
-            throw error
+            throw new Error("Connection failed")
         }
     }
 
