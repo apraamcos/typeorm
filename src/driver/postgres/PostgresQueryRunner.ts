@@ -86,49 +86,26 @@ export class PostgresQueryRunner
         if (this.databaseConnectionPromise && !reconnect)
             return this.databaseConnectionPromise
 
-        if (this.mode === "slave" && this.driver.isReplicated) {
-            this.databaseConnectionPromise = this.driver
-                .obtainSlaveConnection()
-                .then(([connection, release]: any[]) => {
-                    this.driver.connectedQueryRunners.push(this)
-                    this.databaseConnection = connection
+        this.databaseConnectionPromise = this.driver
+            .obtainMasterConnection(reconnect)
+            .then(async ([connection, release]: any[]) => {
+                this.driver.connectedQueryRunners.push(this)
+                this.databaseConnection = connection
 
-                    const onErrorCallback = async (err: Error) =>
-                        await this.releasePostgresConnection(err)
-                    this.releaseCallback = (err?: Error) => {
-                        this.databaseConnection.removeListener(
-                            "error",
-                            onErrorCallback,
-                        )
-                        release(err)
-                    }
-                    this.databaseConnection.on("error", onErrorCallback)
+                const onErrorCallback = async (err: Error) => {
+                    return await this.releasePostgresConnection(err)
+                }
+                this.releaseCallback = (err?: Error) => {
+                    this.databaseConnection.removeListener(
+                        "error",
+                        onErrorCallback,
+                    )
+                    release(err)
+                }
+                this.databaseConnection.on("error", onErrorCallback)
 
-                    return this.databaseConnection
-                })
-        } else {
-            // master
-            this.databaseConnectionPromise = this.driver
-                .obtainMasterConnection(reconnect)
-                .then(async ([connection, release]: any[]) => {
-                    this.driver.connectedQueryRunners.push(this)
-                    this.databaseConnection = connection
-
-                    const onErrorCallback = async (err: Error) => {
-                        return await this.releasePostgresConnection(err)
-                    }
-                    this.releaseCallback = (err?: Error) => {
-                        this.databaseConnection.removeListener(
-                            "error",
-                            onErrorCallback,
-                        )
-                        release(err)
-                    }
-                    this.databaseConnection.on("error", onErrorCallback)
-
-                    return this.databaseConnection
-                })
-        }
+                return this.databaseConnection
+            })
 
         return this.databaseConnectionPromise
     }

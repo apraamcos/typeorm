@@ -28,7 +28,7 @@ import { View } from "../../schema-builder/view/View"
 import { TableForeignKey } from "../../schema-builder/table/TableForeignKey"
 import { InstanceChecker } from "../../util/InstanceChecker"
 import { UpsertType } from "../types/UpsertType"
-import type { Pool } from "pg"
+import { Pool } from "pg"
 import { sleep } from "./sleep"
 
 /**
@@ -348,19 +348,7 @@ export class PostgresDriver implements Driver {
      */
     async connect(retryDuration?: number): Promise<void> {
         try {
-            if (this.options.replication) {
-                this.slaves = await Promise.all(
-                    this.options.replication.slaves.map((slave) => {
-                        return this.createPool(this.options, slave)
-                    }),
-                )
-                this.master = await this.createPool(
-                    this.options,
-                    this.options.replication.master,
-                )
-            } else {
-                this.master = await this.createPool(this.options, this.options)
-            }
+            this.master = await this.createPool(this.options, this.options)
 
             const queryRunner = this.createQueryRunner("master")
 
@@ -624,14 +612,11 @@ export class PostgresDriver implements Driver {
      * Closes connection with database.
      */
     async disconnect(): Promise<void> {
-        if (!this.master) {
-            throw new ConnectionIsNotSetError("postgres")
-        }
+        if (!this.master)
+            return Promise.reject(new ConnectionIsNotSetError("postgres"))
 
         await this.closePool(this.master)
-        await Promise.all(this.slaves.map((slave) => this.closePool(slave)))
         this.master = undefined
-        this.slaves = []
     }
 
     /**
@@ -1226,24 +1211,11 @@ export class PostgresDriver implements Driver {
     }
 
     /**
-     * Obtains a new database connection to a slave server.
      * Used for replication.
      * If replication is not setup then returns master (default) connection's database connection.
      */
     async obtainSlaveConnection(): Promise<[any, Function]> {
-        if (!this.slaves.length) {
-            return this.obtainMasterConnection()
-        }
-
-        const random = Math.floor(Math.random() * this.slaves.length)
-
-        return new Promise((ok, fail) => {
-            this.slaves[random].connect(
-                (err: any, connection: any, release: any) => {
-                    err ? fail(err) : ok([connection, release])
-                },
-            )
-        })
+        return new Promise((ok, fail) => {})
     }
 
     /**
@@ -1488,21 +1460,7 @@ export class PostgresDriver implements Driver {
     /**
      * If driver dependency is not given explicitly, then try to load it via "require".
      */
-    protected loadDependencies(): void {
-        try {
-            const postgres = this.options.driver || PlatformTools.load("pg")
-            this.postgres = postgres
-            try {
-                const pgNative =
-                    this.options.nativeDriver || PlatformTools.load("pg-native")
-                if (pgNative && this.postgres.native)
-                    this.postgres = this.postgres.native
-            } catch (e) {}
-        } catch (e) {
-            // todo: better error for browser env
-            throw new DriverPackageNotInstalledError("Postgres", "pg")
-        }
-    }
+    protected loadDependencies(): void {}
 
     /**
      * Creates a new connection pool for a given database credentials.
@@ -1534,25 +1492,8 @@ export class PostgresDriver implements Driver {
             options.extra || {},
         )
 
-        if (options.parseInt8 !== undefined) {
-            if (
-                this.postgres.defaults &&
-                Object.getOwnPropertyDescriptor(
-                    this.postgres.defaults,
-                    "parseInt8",
-                )?.set
-            ) {
-                this.postgres.defaults.parseInt8 = options.parseInt8
-            } else {
-                logger.log(
-                    "warn",
-                    "Attempted to set parseInt8 option, but the postgres driver does not support setting defaults.parseInt8. This option will be ignored.",
-                )
-            }
-        }
-
         // create a connection pool
-        const pool = new this.postgres.Pool(connectionOptions) as Pool
+        const pool = new Pool(connectionOptions)
 
         const poolErrorHandler =
             options.poolErrorHandler ||
