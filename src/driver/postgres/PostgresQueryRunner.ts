@@ -79,33 +79,33 @@ export class PostgresQueryRunner
      * Creates/uses database connection from the connection pool to perform further operations.
      * Returns obtained database connection.
      */
-    connect(reconnect?: boolean): Promise<any> {
+    async connect(reconnect?: boolean): Promise<any> {
         if (this.databaseConnection && !reconnect)
             return Promise.resolve(this.databaseConnection)
 
         if (this.databaseConnectionPromise && !reconnect)
             return this.databaseConnectionPromise
 
-        this.databaseConnectionPromise = this.driver
-            .obtainMasterConnection(reconnect)
-            .then(async ([connection, release]: any[]) => {
-                this.driver.connectedQueryRunners.push(this)
-                this.databaseConnection = connection
+        this.databaseConnectionPromise = (async () => {
+            const [connection, release] =
+                await this.driver.obtainMasterConnection(reconnect)
 
-                const onErrorCallback = async (err: Error) => {
-                    return await this.releasePostgresConnection(err)
-                }
-                this.releaseCallback = (err?: Error) => {
-                    this.databaseConnection.removeListener(
-                        "error",
-                        onErrorCallback,
-                    )
-                    release(err)
-                }
-                this.databaseConnection.on("error", onErrorCallback)
+            this.driver.connectedQueryRunners.push(this)
+            this.databaseConnection = connection
 
-                return this.databaseConnection
-            })
+            const onErrorCallback = async (err: Error) => {
+                return await this.releasePostgresConnection(err)
+            }
+
+            this.releaseCallback = (err?: Error) => {
+                this.databaseConnection.removeListener("error", onErrorCallback)
+                release(err)
+            }
+
+            this.databaseConnection.on("error", onErrorCallback)
+
+            return this.databaseConnection
+        })()
 
         return this.databaseConnectionPromise
     }
@@ -292,7 +292,10 @@ export class PostgresQueryRunner
 
             return result
         } catch (err) {
-            if (err.message.includes("Connection terminated unexpectedly")) {
+            if (
+                err.message.includes("Connection terminated unexpectedly") ||
+                err.message === "Connection failed"
+            ) {
                 await sleep(500)
                 return await this.query(
                     query,

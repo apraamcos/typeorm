@@ -1,7 +1,6 @@
 import { ObjectLiteral } from "../../common/ObjectLiteral"
 import { DataSource } from "../../data-source/DataSource"
 import { ConnectionIsNotSetError } from "../../error/ConnectionIsNotSetError"
-import { DriverPackageNotInstalledError } from "../../error/DriverPackageNotInstalledError"
 import { ColumnMetadata } from "../../metadata/ColumnMetadata"
 import { EntityMetadata } from "../../metadata/EntityMetadata"
 import { PlatformTools } from "../../platform/PlatformTools"
@@ -28,7 +27,7 @@ import { View } from "../../schema-builder/view/View"
 import { TableForeignKey } from "../../schema-builder/table/TableForeignKey"
 import { InstanceChecker } from "../../util/InstanceChecker"
 import { UpsertType } from "../types/UpsertType"
-import { Pool } from "pg"
+import { Pool, PoolClient } from "pg"
 import { sleep } from "./sleep"
 
 /**
@@ -52,7 +51,7 @@ export class PostgresDriver implements Driver {
     /**
      * Pool for master database.
      */
-    master: any
+    master?: Pool
 
     /**
      * Pool for slave databases.
@@ -368,7 +367,10 @@ export class PostgresDriver implements Driver {
                 this.schema = this.searchSchema
             }
         } catch (err) {
-            if (err.message.includes("Connection terminated unexpectedly")) {
+            if (
+                err.message.includes("Connection terminated unexpectedly") ||
+                err.message === "Connection failed"
+            ) {
                 await sleep(500)
                 return await this.connect((retryDuration ?? 0) + 500)
             } else if (
@@ -1199,15 +1201,22 @@ export class PostgresDriver implements Driver {
         if (reconnect) {
             await this.connect()
         }
-        if (!this.master) {
-            throw new TypeORMError("Driver not Connected")
+
+        const client = await this.master!.connect()
+
+        // 包装 release 函数以添加错误处理
+        const safeRelease = () => {
+            try {
+                client.release()
+            } catch (releaseError) {
+                this.connection.logger.log(
+                    "warn",
+                    `Error releasing connection: ${releaseError}`,
+                )
+            }
         }
 
-        return new Promise((ok, fail) => {
-            this.master.connect((err: any, connection: any, release: any) => {
-                err ? fail(err) : ok([connection, release])
-            })
-        })
+        return [client, safeRelease]
     }
 
     /**
@@ -1472,8 +1481,6 @@ export class PostgresDriver implements Driver {
         const { logger } = this.connection
         credentials = Object.assign({}, credentials)
 
-        // build connection options for the driver
-        // See: https://github.com/brianc/node-postgres/tree/master/packages/pg-pool#create
         const connectionOptions = Object.assign(
             {},
             {
@@ -1492,40 +1499,84 @@ export class PostgresDriver implements Driver {
             options.extra || {},
         )
 
-        // create a connection pool
-        const pool = new Pool(connectionOptions)
+        let pool: Pool | undefined = undefined
+        let client: PoolClient | undefined = undefined
 
-        const poolErrorHandler =
-            options.poolErrorHandler ||
-            ((error: any) =>
-                logger.log("warn", `Postgres pool raised an error. ${error}`))
+        try {
+            pool = new Pool(connectionOptions)
 
-        /*
-          Attaching an error handler to pool errors is essential, as, otherwise, errors raised will go unhandled and
-          cause the hosting app to crash.
-         */
-        pool.on("error", poolErrorHandler)
-
-        return new Promise((ok, fail) => {
-            pool.connect((err: any, connection: any, release: Function) => {
-                if (err) return fail(err)
-
-                if (options.logNotifications) {
-                    connection.on("notice", (msg: any) => {
-                        msg && this.connection.logger.log("info", msg.message)
-                    })
-                    connection.on("notification", (msg: any) => {
-                        msg &&
-                            this.connection.logger.log(
-                                "info",
-                                `Received NOTIFY on channel ${msg.channel}: ${msg.payload}.`,
-                            )
-                    })
-                }
-                release()
-                ok(pool)
+            pool.on("error", (error: Error) => {
+                logger.log("warn", `Postgres pool error: ${error}`)
             })
-        })
+
+            pool.on("connect", (client) => {
+                client.on("error", (err: Error) => {
+                    logger.log("warn", `Postgres client error: ${err}`)
+                })
+
+                const originalRelease = client.release
+                client.release = function (err?: Error) {
+                    client.removeAllListeners("error")
+                    return originalRelease.call(this, err)
+                }
+            })
+
+            const connectionTimeout = options.connectTimeoutMS || 10000
+
+            const connectWithTimeout = async (): Promise<PoolClient> => {
+                const timeoutPromise = new Promise<never>((_, reject) => {
+                    setTimeout(
+                        () => reject(new Error("Connection timeout")),
+                        connectionTimeout,
+                    )
+                })
+
+                const connectPromise = pool!.connect()
+
+                try {
+                    return await Promise.race([connectPromise, timeoutPromise])
+                } catch (error) {
+                    if (error.message === "Connection timeout") {
+                        connectPromise.catch(() => {})
+                    }
+                    throw error
+                }
+            }
+
+            client = await connectWithTimeout()
+            try {
+                await client.query("SELECT 1")
+            } finally {
+                client.release()
+            }
+
+            return pool
+        } catch (error) {
+            if (client) {
+                try {
+                    client.release()
+                } catch (releaseError) {
+                    logger.log(
+                        "warn",
+                        `Error releasing client: ${releaseError}`,
+                    )
+                }
+            }
+
+            if (pool) {
+                try {
+                    pool.removeAllListeners()
+                    await pool.end()
+                } catch (cleanupError) {
+                    logger.log(
+                        "warn",
+                        `Error cleaning up pool: ${cleanupError}`,
+                    )
+                }
+            }
+
+            throw error
+        }
     }
 
     /**
