@@ -52,7 +52,7 @@ export class PostgresQueryRunner
     /**
      * Promise used to obtain a database connection for a first time.
      */
-    protected databaseConnectionPromise: Promise<any>
+    protected databaseConnectionPromise?: Promise<any>
 
     /**
      * Special callback provided by a driver used to release a created connection.
@@ -80,31 +80,37 @@ export class PostgresQueryRunner
      * Returns obtained database connection.
      */
     async connect(reconnect?: boolean): Promise<any> {
-        if (this.databaseConnection && !reconnect)
-            return Promise.resolve(this.databaseConnection)
-
-        if (this.databaseConnectionPromise && !reconnect)
-            return this.databaseConnectionPromise
+        if (this.databaseConnection && !reconnect) {
+            return this.databaseConnection
+        }
 
         this.databaseConnectionPromise = (async () => {
-            const [connection, release] =
-                await this.driver.obtainMasterConnection(reconnect)
+            try {
+                const [connection, release] =
+                    await this.driver.obtainMasterConnection(reconnect)
 
-            this.driver.connectedQueryRunners.push(this)
-            this.databaseConnection = connection
+                this.driver.connectedQueryRunners.push(this)
+                this.databaseConnection = connection
 
-            const onErrorCallback = async (err: Error) => {
-                return await this.releasePostgresConnection(err)
+                const onErrorCallback = async (err: Error) => {
+                    return await this.releasePostgresConnection(err)
+                }
+
+                this.releaseCallback = (err?: Error) => {
+                    this.databaseConnection.removeListener(
+                        "error",
+                        onErrorCallback,
+                    )
+                    release(err)
+                }
+
+                this.databaseConnection.on("error", onErrorCallback)
+
+                return this.databaseConnection
+            } catch (error) {
+                this.databaseConnectionPromise = undefined
+                throw error
             }
-
-            this.releaseCallback = (err?: Error) => {
-                this.databaseConnection.removeListener("error", onErrorCallback)
-                release(err)
-            }
-
-            this.databaseConnection.on("error", onErrorCallback)
-
-            return this.databaseConnection
         })()
 
         return this.databaseConnectionPromise

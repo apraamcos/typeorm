@@ -1197,21 +1197,176 @@ export class PostgresDriver implements Driver {
      */
     async obtainMasterConnection(
         reconnect?: boolean,
-    ): Promise<[any, Function]> {
+    ): Promise<[PoolClient, Function]> {
         if (reconnect) {
             await this.connect()
         }
 
-        const client = await this.master!.connect()
+        if (!this.master) {
+            throw new ConnectionIsNotSetError("Connection failed")
+        }
 
-        // 包装 release 函数以添加错误处理
+        let client: PoolClient | undefined
+        const maxRetries = 3
+        const baseDelay = 1000
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            let timeoutId: NodeJS.Timeout | undefined
+
+            try {
+                const connectPromise = new Promise<PoolClient>(
+                    (resolve, reject) => {
+                        this.master!.connect().then(resolve).catch(reject)
+                    },
+                )
+
+                const timeoutPromise = new Promise<never>((_, reject) => {
+                    timeoutId = setTimeout(() => {
+                        reject(new Error("Connection failed"))
+                    }, 10000)
+                })
+
+                try {
+                    client = await Promise.race([
+                        connectPromise,
+                        timeoutPromise,
+                    ])
+
+                    if (timeoutId) {
+                        clearTimeout(timeoutId)
+                        timeoutId = undefined
+                    }
+
+                    await new Promise<void>((resolve, reject) => {
+                        client!
+                            .query("SELECT 1")
+                            .then(() => resolve())
+                            .catch(reject)
+                    })
+
+                    break
+                } catch (raceError) {
+                    if (timeoutId) {
+                        clearTimeout(timeoutId)
+                        timeoutId = undefined
+                    }
+
+                    if (client) {
+                        try {
+                            client.release()
+                        } catch (releaseError) {
+                            this.connection.logger.log(
+                                "warn",
+                                `Error releasing failed client: ${releaseError.message}`,
+                            )
+                        }
+                        client = undefined
+                    }
+
+                    throw raceError
+                }
+            } catch (error) {
+                if (timeoutId) {
+                    clearTimeout(timeoutId)
+                }
+
+                const isLastAttempt = attempt === maxRetries
+                const shouldRetry =
+                    error.message.includes(
+                        "Connection terminated unexpectedly",
+                    ) ||
+                    error.message.includes("Connection failed") ||
+                    error.code === "ECONNREFUSED" ||
+                    error.code === "ECONNRESET" ||
+                    error.code === "ETIMEDOUT"
+
+                this.connection.logger.log(
+                    "warn",
+                    `Connection attempt ${attempt}/${maxRetries} failed: ${error.message}`,
+                )
+
+                if (isLastAttempt || !shouldRetry) {
+                    if (
+                        error.message.includes(
+                            "Connection terminated unexpectedly",
+                        )
+                    ) {
+                        try {
+                            this.connection.logger.log(
+                                "info",
+                                "Attempting to recreate connection pool...",
+                            )
+
+                            const oldPool = this.master
+                            this.master = undefined
+
+                            try {
+                                await new Promise<void>((resolve, reject) => {
+                                    oldPool
+                                        .end()
+                                        .then(() => resolve())
+                                        .catch(reject)
+                                })
+                            } catch (endError) {
+                                this.connection.logger.log(
+                                    "warn",
+                                    `Error ending old pool: ${endError.message}`,
+                                )
+                            }
+
+                            this.master = await this.createPool(
+                                this.options,
+                                this.options,
+                            )
+
+                            client = await new Promise<PoolClient>(
+                                (resolve, reject) => {
+                                    this.master!.connect()
+                                        .then(resolve)
+                                        .catch(reject)
+                                },
+                            )
+
+                            await new Promise<void>((resolve, reject) => {
+                                client!
+                                    .query("SELECT 1")
+                                    .then(() => resolve())
+                                    .catch(reject)
+                            })
+
+                            break
+                        } catch (recreateError) {
+                            this.connection.logger.log(
+                                "warn",
+                                `Failed to recreate connection pool: ${recreateError.message}`,
+                            )
+                            throw new Error("Connection failed")
+                        }
+                    } else {
+                        throw error
+                    }
+                }
+
+                if (attempt < maxRetries) {
+                    const delay = baseDelay * Math.pow(2, attempt - 1)
+                    await new Promise((resolve) => setTimeout(resolve, delay))
+                }
+            }
+        }
+
+        if (!client) {
+            throw new Error("Connection failed")
+        }
+
         const safeRelease = () => {
             try {
-                client.release()
+                if (client && typeof client.release === "function") {
+                    client.release()
+                }
             } catch (releaseError) {
                 this.connection.logger.log(
                     "warn",
-                    `Error releasing connection: ${releaseError}`,
+                    `Error releasing connection: ${releaseError.message}`,
                 )
             }
         }
