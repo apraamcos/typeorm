@@ -1211,63 +1211,50 @@ export class PostgresDriver implements Driver {
         const baseDelay = 1000
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            let timeoutId: NodeJS.Timeout | undefined
-
             try {
-                const connectPromise = new Promise<PoolClient>(
-                    (resolve, reject) => {
-                        this.master!.connect().then(resolve).catch(reject)
-                    },
-                )
-
-                const timeoutPromise = new Promise<never>((_, reject) => {
-                    timeoutId = setTimeout(() => {
+                client = await new Promise<PoolClient>((resolve, reject) => {
+                    const connTimeout = setTimeout(() => {
                         reject(new Error("Connection failed"))
                     }, 10000)
+                    this.master!.connect()
+                        .then((c) => {
+                            clearTimeout(connTimeout)
+                            resolve(c)
+                        })
+                        .catch((e) => {
+                            clearTimeout(connTimeout)
+                            reject(e)
+                        })
                 })
 
-                try {
-                    client = await Promise.race([
-                        connectPromise,
-                        timeoutPromise,
-                    ])
+                await new Promise<void>((resolve, reject) => {
+                    const queryTimeout = setTimeout(() => {
+                        reject(new Error("Query timeout"))
+                    }, 5000)
+                    client!
+                        .query("SELECT 1")
+                        .then(() => {
+                            clearTimeout(queryTimeout)
+                            resolve()
+                        })
+                        .catch((e) => {
+                            clearTimeout(queryTimeout)
+                            reject(e)
+                        })
+                })
 
-                    if (timeoutId) {
-                        clearTimeout(timeoutId)
-                        timeoutId = undefined
-                    }
-
-                    await new Promise<void>((resolve, reject) => {
-                        client!
-                            .query("SELECT 1")
-                            .then(() => resolve())
-                            .catch(reject)
-                    })
-
-                    break
-                } catch (raceError) {
-                    if (timeoutId) {
-                        clearTimeout(timeoutId)
-                        timeoutId = undefined
-                    }
-
-                    if (client) {
-                        try {
-                            client.release()
-                        } catch (releaseError) {
-                            this.connection.logger.log(
-                                "warn",
-                                `Error releasing failed client: ${releaseError.message}`,
-                            )
-                        }
-                        client = undefined
-                    }
-
-                    throw raceError
-                }
+                break
             } catch (error) {
-                if (timeoutId) {
-                    clearTimeout(timeoutId)
+                if (client) {
+                    try {
+                        client.release()
+                    } catch (releaseError) {
+                        this.connection.logger.log(
+                            "warn",
+                            `Error releasing failed client: ${releaseError.message}`,
+                        )
+                    }
+                    client = undefined
                 }
 
                 const isLastAttempt = attempt === maxRetries
@@ -1302,10 +1289,19 @@ export class PostgresDriver implements Driver {
 
                             try {
                                 await new Promise<void>((resolve, reject) => {
+                                    const endTimeout = setTimeout(() => {
+                                        resolve()
+                                    }, 5000)
                                     oldPool
                                         .end()
-                                        .then(() => resolve())
-                                        .catch(reject)
+                                        .then(() => {
+                                            clearTimeout(endTimeout)
+                                            resolve()
+                                        })
+                                        .catch((e) => {
+                                            clearTimeout(endTimeout)
+                                            reject(e)
+                                        })
                                 })
                             } catch (endError) {
                                 this.connection.logger.log(
@@ -1321,17 +1317,35 @@ export class PostgresDriver implements Driver {
 
                             client = await new Promise<PoolClient>(
                                 (resolve, reject) => {
+                                    const connTimeout = setTimeout(() => {
+                                        reject(new Error("Connection failed"))
+                                    }, 10000)
                                     this.master!.connect()
-                                        .then(resolve)
-                                        .catch(reject)
+                                        .then((c) => {
+                                            clearTimeout(connTimeout)
+                                            resolve(c)
+                                        })
+                                        .catch((e) => {
+                                            clearTimeout(connTimeout)
+                                            reject(e)
+                                        })
                                 },
                             )
 
                             await new Promise<void>((resolve, reject) => {
+                                const queryTimeout = setTimeout(() => {
+                                    reject(new Error("Query timeout"))
+                                }, 5000)
                                 client!
                                     .query("SELECT 1")
-                                    .then(() => resolve())
-                                    .catch(reject)
+                                    .then(() => {
+                                        clearTimeout(queryTimeout)
+                                        resolve()
+                                    })
+                                    .catch((e) => {
+                                        clearTimeout(queryTimeout)
+                                        reject(e)
+                                    })
                             })
 
                             break
@@ -1678,29 +1692,40 @@ export class PostgresDriver implements Driver {
 
             const connectionTimeout = options.connectTimeoutMS || 10000
 
-            const connectWithTimeout = async (): Promise<PoolClient> => {
-                const timeoutPromise = new Promise<never>((_, reject) => {
-                    setTimeout(
-                        () => reject(new Error("Connection timeout")),
-                        connectionTimeout,
-                    )
-                })
+            client = await new Promise<PoolClient>((resolve, reject) => {
+                const connTimeout = setTimeout(() => {
+                    reject(new Error("Connection timeout"))
+                }, connectionTimeout)
 
-                const connectPromise = pool!.connect()
+                pool!
+                    .connect()
+                    .then((c) => {
+                        clearTimeout(connTimeout)
+                        resolve(c)
+                    })
+                    .catch((e) => {
+                        clearTimeout(connTimeout)
+                        reject(e)
+                    })
+            })
 
-                try {
-                    return await Promise.race([connectPromise, timeoutPromise])
-                } catch (error) {
-                    if (error.message === "Connection timeout") {
-                        connectPromise.catch(() => {})
-                    }
-                    throw error
-                }
-            }
-
-            client = await connectWithTimeout()
             try {
-                await client.query("SELECT 1")
+                await new Promise<void>((resolve, reject) => {
+                    const queryTimeout = setTimeout(() => {
+                        reject(new Error("Query timeout"))
+                    }, 5000)
+
+                    client!
+                        .query("SELECT 1")
+                        .then(() => {
+                            clearTimeout(queryTimeout)
+                            resolve()
+                        })
+                        .catch((e) => {
+                            clearTimeout(queryTimeout)
+                            reject(e)
+                        })
+                })
             } finally {
                 client.release()
             }
