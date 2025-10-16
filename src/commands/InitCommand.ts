@@ -695,43 +695,6 @@ Steps to run this project:
             typeorm: ourPackageJson.version,
         }
 
-        switch (database) {
-            case "mysql":
-            case "mariadb":
-                packageJson.dependencies["mysql2"] =
-                    ourPackageJson.devDependencies.mysql2
-                break
-            case "postgres":
-            case "cockroachdb":
-                packageJson.dependencies["pg"] =
-                    ourPackageJson.devDependencies.pg
-                break
-            case "sqlite":
-                packageJson.dependencies["sqlite3"] =
-                    ourPackageJson.devDependencies.sqlite3
-                break
-            case "better-sqlite3":
-                packageJson.dependencies["better-sqlite3"] =
-                    ourPackageJson.devDependencies["better-sqlite3"]
-                break
-            case "oracle":
-                packageJson.dependencies["oracledb"] =
-                    ourPackageJson.devDependencies.oracledb
-                break
-            case "mssql":
-                packageJson.dependencies["mssql"] =
-                    ourPackageJson.devDependencies.mssql
-                break
-            case "mongodb":
-                packageJson.dependencies["mongodb"] =
-                    ourPackageJson.devDependencies.mongodb
-                break
-            case "spanner":
-                packageJson.dependencies["@google-cloud/spanner"] =
-                    ourPackageJson.devDependencies["@google-cloud/spanner"]
-                break
-        }
-
         if (express) {
             packageJson.dependencies["express"] = "^4.21.2"
             packageJson.dependencies["body-parser"] = "^1.20.3"
