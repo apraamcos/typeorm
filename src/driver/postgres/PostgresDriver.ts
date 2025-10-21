@@ -1256,8 +1256,7 @@ export class PostgresDriver implements Driver {
         }
 
         let client: PoolClient | undefined
-        const maxRetries = 3
-        const baseDelay = 1000
+        const maxRetries = 12
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
@@ -1312,6 +1311,7 @@ export class PostgresDriver implements Driver {
                         "Connection terminated unexpectedly",
                     ) ||
                     error.message.includes("Connection failed") ||
+                    error.message.includes("Query timeout") ||
                     error.code === "ECONNREFUSED" ||
                     error.code === "ECONNRESET" ||
                     error.code === "ETIMEDOUT"
@@ -1411,7 +1411,7 @@ export class PostgresDriver implements Driver {
                 }
 
                 if (attempt < maxRetries) {
-                    const delay = baseDelay * Math.pow(2, attempt - 1)
+                    const delay = attempt * 1000
                     await new Promise((resolve) => setTimeout(resolve, delay))
                 }
             }
