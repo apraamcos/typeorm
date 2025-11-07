@@ -116,8 +116,7 @@ export class PostgresDriver implements Driver {
     /**
      * Gets list of supported column data types by a driver.
      *
-     * @see https://www.tutorialspoint.com/postgresql/postgresql_data_types.htm
-     * @see https://www.postgresql.org/docs/9.2/static/datatype.html
+     * @see https://www.postgresql.org/docs/current/datatype.html
      */
     supportedDataTypes: ColumnType[] = [
         "int",
@@ -176,6 +175,7 @@ export class PostgresDriver implements Driver {
         "xml",
         "json",
         "jsonb",
+        "jsonpath",
         "int4range",
         "int8range",
         "numrange",
@@ -192,6 +192,8 @@ export class PostgresDriver implements Driver {
         "geography",
         "cube",
         "ltree",
+        "vector",
+        "halfvec",
     ]
 
     /**
@@ -215,6 +217,8 @@ export class PostgresDriver implements Driver {
         "bit",
         "varbit",
         "bit varying",
+        "vector",
+        "halfvec",
     ]
 
     /**
@@ -440,6 +444,7 @@ export class PostgresDriver implements Driver {
             hasCubeColumns,
             hasGeometryColumns,
             hasLtreeColumns,
+            hasVectorColumns,
             hasExclusionConstraints,
         } = extensionsMetadata
 
@@ -519,6 +524,18 @@ export class PostgresDriver implements Driver {
                     "At least one of the entities has a ltree column, but the 'ltree' extension cannot be installed automatically. Please install it manually using superuser rights",
                 )
             }
+        if (hasVectorColumns)
+            try {
+                await this.executeQuery(
+                    connection,
+                    `CREATE EXTENSION IF NOT EXISTS "vector"`,
+                )
+            } catch (_) {
+                logger.log(
+                    "warn",
+                    "At least one of the entities has a vector column, but the 'vector' extension (pgvector) cannot be installed automatically. Please install it manually using superuser rights",
+                )
+            }
         if (hasExclusionConstraints)
             try {
                 // The btree_gist extension provides operator support in PostgreSQL exclusion constraints
@@ -587,6 +604,14 @@ export class PostgresDriver implements Driver {
                 )
             },
         )
+        const hasVectorColumns = this.connection.entityMetadatas.some(
+            (metadata) => {
+                return metadata.columns.some(
+                    (column) =>
+                        column.type === "vector" || column.type === "halfvec",
+                )
+            },
+        )
         const hasExclusionConstraints = this.connection.entityMetadatas.some(
             (metadata) => {
                 return metadata.exclusions.length > 0
@@ -600,6 +625,7 @@ export class PostgresDriver implements Driver {
             hasCubeColumns,
             hasGeometryColumns,
             hasLtreeColumns,
+            hasVectorColumns,
             hasExclusionConstraints,
             hasExtensions:
                 hasUuidColumns ||
@@ -608,6 +634,7 @@ export class PostgresDriver implements Driver {
                 hasGeometryColumns ||
                 hasCubeColumns ||
                 hasLtreeColumns ||
+                hasVectorColumns ||
                 hasExclusionConstraints,
         }
     }
@@ -669,6 +696,15 @@ export class PostgresDriver implements Driver {
             ) >= 0
         ) {
             return JSON.stringify(value)
+        } else if (
+            columnMetadata.type === "vector" ||
+            columnMetadata.type === "halfvec"
+        ) {
+            if (Array.isArray(value)) {
+                return `[${value.join(",")}]`
+            } else {
+                return value
+            }
         } else if (columnMetadata.type === "hstore") {
             if (typeof value === "string") {
                 return value
@@ -745,6 +781,18 @@ export class PostgresDriver implements Driver {
             value = DateUtils.mixedDateToDateString(value)
         } else if (columnMetadata.type === "time") {
             value = DateUtils.mixedTimeToString(value)
+        } else if (
+            columnMetadata.type === "vector" ||
+            columnMetadata.type === "halfvec"
+        ) {
+            if (
+                typeof value === "string" &&
+                value.startsWith("[") &&
+                value.endsWith("]")
+            ) {
+                if (value === "[]") return []
+                return value.slice(1, -1).split(",").map(Number)
+            }
         } else if (columnMetadata.type === "hstore") {
             if (columnMetadata.hstoreType === "object") {
                 const unescapeString = (str: string) =>
@@ -1047,9 +1095,7 @@ export class PostgresDriver implements Driver {
         }
 
         if (columnMetadata.isArray && Array.isArray(defaultValue)) {
-            return `'{${defaultValue
-                .map((val: string) => `${val}`)
-                .join(",")}}'`
+            return `'{${defaultValue.map((val) => String(val)).join(",")}}'`
         }
 
         if (
@@ -1185,6 +1231,9 @@ export class PostgresDriver implements Driver {
             } else {
                 type = column.type
             }
+        } else if (column.type === "vector" || column.type === "halfvec") {
+            type =
+                column.type + (column.length ? "(" + column.length + ")" : "")
         }
 
         if (column.isArray) type += " array"
@@ -1209,67 +1258,53 @@ export class PostgresDriver implements Driver {
         }
 
         let client: PoolClient | undefined
-        const maxRetries = 3
-        const baseDelay = 1000
+        const maxRetries = 12
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            let timeoutId: NodeJS.Timeout | undefined
-
             try {
-                const connectPromise = new Promise<PoolClient>(
-                    (resolve, reject) => {
-                        this.master!.connect().then(resolve).catch(reject)
-                    },
-                )
-
-                const timeoutPromise = new Promise<never>((_, reject) => {
-                    timeoutId = setTimeout(() => {
+                client = await new Promise<PoolClient>((resolve, reject) => {
+                    const connTimeout = setTimeout(() => {
                         reject(new Error("Connection failed"))
                     }, 10000)
+                    this.master!.connect()
+                        .then((c) => {
+                            clearTimeout(connTimeout)
+                            resolve(c)
+                        })
+                        .catch((e) => {
+                            clearTimeout(connTimeout)
+                            reject(e)
+                        })
                 })
 
-                try {
-                    client = await Promise.race([
-                        connectPromise,
-                        timeoutPromise,
-                    ])
+                await new Promise<void>((resolve, reject) => {
+                    const queryTimeout = setTimeout(() => {
+                        reject(new Error("Query timeout"))
+                    }, 5000)
+                    client!
+                        .query("SELECT 1")
+                        .then(() => {
+                            clearTimeout(queryTimeout)
+                            resolve()
+                        })
+                        .catch((e) => {
+                            clearTimeout(queryTimeout)
+                            reject(e)
+                        })
+                })
 
-                    if (timeoutId) {
-                        clearTimeout(timeoutId)
-                        timeoutId = undefined
-                    }
-
-                    await new Promise<void>((resolve, reject) => {
-                        client!
-                            .query("SELECT 1")
-                            .then(() => resolve())
-                            .catch(reject)
-                    })
-
-                    break
-                } catch (raceError) {
-                    if (timeoutId) {
-                        clearTimeout(timeoutId)
-                        timeoutId = undefined
-                    }
-
-                    if (client) {
-                        try {
-                            client.release()
-                        } catch (releaseError) {
-                            this.connection.logger.log(
-                                "warn",
-                                `Error releasing failed client: ${releaseError.message}`,
-                            )
-                        }
-                        client = undefined
-                    }
-
-                    throw raceError
-                }
+                break
             } catch (error) {
-                if (timeoutId) {
-                    clearTimeout(timeoutId)
+                if (client) {
+                    try {
+                        client.release()
+                    } catch (releaseError) {
+                        this.connection.logger.log(
+                            "warn",
+                            `Error releasing failed client: ${releaseError.message}`,
+                        )
+                    }
+                    client = undefined
                 }
 
                 const isLastAttempt = attempt === maxRetries
@@ -1278,6 +1313,7 @@ export class PostgresDriver implements Driver {
                         "Connection terminated unexpectedly",
                     ) ||
                     error.message.includes("Connection failed") ||
+                    error.message.includes("Query timeout") ||
                     error.code === "ECONNREFUSED" ||
                     error.code === "ECONNRESET" ||
                     error.code === "ETIMEDOUT"
@@ -1304,10 +1340,19 @@ export class PostgresDriver implements Driver {
 
                             try {
                                 await new Promise<void>((resolve, reject) => {
+                                    const endTimeout = setTimeout(() => {
+                                        resolve()
+                                    }, 5000)
                                     oldPool
                                         .end()
-                                        .then(() => resolve())
-                                        .catch(reject)
+                                        .then(() => {
+                                            clearTimeout(endTimeout)
+                                            resolve()
+                                        })
+                                        .catch((e) => {
+                                            clearTimeout(endTimeout)
+                                            reject(e)
+                                        })
                                 })
                             } catch (endError) {
                                 this.connection.logger.log(
@@ -1323,17 +1368,35 @@ export class PostgresDriver implements Driver {
 
                             client = await new Promise<PoolClient>(
                                 (resolve, reject) => {
+                                    const connTimeout = setTimeout(() => {
+                                        reject(new Error("Connection failed"))
+                                    }, 10000)
                                     this.master!.connect()
-                                        .then(resolve)
-                                        .catch(reject)
+                                        .then((c) => {
+                                            clearTimeout(connTimeout)
+                                            resolve(c)
+                                        })
+                                        .catch((e) => {
+                                            clearTimeout(connTimeout)
+                                            reject(e)
+                                        })
                                 },
                             )
 
                             await new Promise<void>((resolve, reject) => {
+                                const queryTimeout = setTimeout(() => {
+                                    reject(new Error("Query timeout"))
+                                }, 5000)
                                 client!
                                     .query("SELECT 1")
-                                    .then(() => resolve())
-                                    .catch(reject)
+                                    .then(() => {
+                                        clearTimeout(queryTimeout)
+                                        resolve()
+                                    })
+                                    .catch((e) => {
+                                        clearTimeout(queryTimeout)
+                                        reject(e)
+                                    })
                             })
 
                             break
@@ -1350,7 +1413,7 @@ export class PostgresDriver implements Driver {
                 }
 
                 if (attempt < maxRetries) {
-                    const delay = baseDelay * Math.pow(2, attempt - 1)
+                    const delay = attempt * 1000
                     await new Promise((resolve) => setTimeout(resolve, delay))
                 }
             }
@@ -1611,10 +1674,10 @@ export class PostgresDriver implements Driver {
     loadStreamDependency() {
         try {
             return PlatformTools.load("pg-query-stream")
-        } catch (e) {
+        } catch {
             // todo: better error for browser env
             throw new TypeORMError(
-                `To use streams you should install pg-query-stream package. Please run npm i pg-query-stream --save command.`,
+                `To use streams you should install pg-query-stream package. Please run "npm i pg-query-stream".`,
             )
         }
     }
@@ -1680,29 +1743,40 @@ export class PostgresDriver implements Driver {
 
             const connectionTimeout = options.connectTimeoutMS || 10000
 
-            const connectWithTimeout = async (): Promise<PoolClient> => {
-                const timeoutPromise = new Promise<never>((_, reject) => {
-                    setTimeout(
-                        () => reject(new Error("Connection timeout")),
-                        connectionTimeout,
-                    )
-                })
+            client = await new Promise<PoolClient>((resolve, reject) => {
+                const connTimeout = setTimeout(() => {
+                    reject(new Error("Connection timeout"))
+                }, connectionTimeout)
 
-                const connectPromise = pool!.connect()
+                pool!
+                    .connect()
+                    .then((c) => {
+                        clearTimeout(connTimeout)
+                        resolve(c)
+                    })
+                    .catch((e) => {
+                        clearTimeout(connTimeout)
+                        reject(e)
+                    })
+            })
 
-                try {
-                    return await Promise.race([connectPromise, timeoutPromise])
-                } catch (error) {
-                    if (error.message === "Connection timeout") {
-                        connectPromise.catch(() => {})
-                    }
-                    throw error
-                }
-            }
-
-            client = await connectWithTimeout()
             try {
-                await client.query("SELECT 1")
+                await new Promise<void>((resolve, reject) => {
+                    const queryTimeout = setTimeout(() => {
+                        reject(new Error("Query timeout"))
+                    }, 5000)
+
+                    client!
+                        .query("SELECT 1")
+                        .then(() => {
+                            clearTimeout(queryTimeout)
+                            resolve()
+                        })
+                        .catch((e) => {
+                            clearTimeout(queryTimeout)
+                            reject(e)
+                        })
+                })
             } finally {
                 client.release()
             }
