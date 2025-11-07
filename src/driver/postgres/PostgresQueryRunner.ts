@@ -318,6 +318,7 @@ export class PostgresQueryRunner
                 err.code === "58P01" ||
                 err.message === "the database system is in recovery mode" ||
                 err.message === "the database system is starting up" ||
+                err.message === "query might have conflicted with replica reconnect" ||
                 (err.message ?? "")
                     .toLowerCase()
                     .includes(
