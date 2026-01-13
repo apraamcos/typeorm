@@ -92,7 +92,7 @@
     "@types/gulp-sourcemaps": "^0.0.38",
     "@types/mocha": "^10.0.10",
     "@types/node": "^16.18.126",
-    "@types/pg": "^8.15.5",
+    "@types/pg": "^8.16.0",
     "@types/sha.js": "^2.4.4",
     "@types/sinon": "^10.0.20",
     "@types/sinon-chai": "^3.2.12",
@@ -126,13 +126,13 @@
     "sort-package-json": "^2.15.1",
     "source-map-support": "^0.5.21",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.2",
+    "typescript": "^5.9.3",
     "typescript-eslint": "^8.44.0"
   },
   "peerDependencies": {
     "pg": "^8.16.3",
     "reflect-metadata": "*",
-    "snowflake-sdk": "^2.3.1"
+    "snowflake-sdk": "^2.3.3"
   },
   "peerDependenciesMeta": {
     "@google-cloud/spanner": {
