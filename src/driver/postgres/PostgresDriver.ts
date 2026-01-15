@@ -27,7 +27,7 @@ import { View } from "../../schema-builder/view/View"
 import { TableForeignKey } from "../../schema-builder/table/TableForeignKey"
 import { InstanceChecker } from "../../util/InstanceChecker"
 import { UpsertType } from "../types/UpsertType"
-import { Pool, PoolClient } from "pg"
+import { Pool, PoolClient, PoolConfig } from "pg"
 import { sleep } from "./sleep"
 
 /**
@@ -1706,23 +1706,19 @@ export class PostgresDriver implements Driver {
         const { logger } = this.connection
         credentials = Object.assign({}, credentials)
 
-        const connectionOptions = Object.assign(
-            {},
-            {
-                connectionString: credentials.url,
-                host: credentials.host,
-                user: credentials.username,
-                password: credentials.password,
-                database: credentials.database,
-                port: credentials.port,
-                ssl: credentials.ssl,
-                connectionTimeoutMillis: options.connectTimeoutMS,
-                application_name:
-                    options.applicationName ?? credentials.applicationName,
-                max: options.poolSize,
-            },
-            options.extra || {},
-        )
+        const connectionOptions: PoolConfig = {
+            connectionString: credentials.url,
+            host: credentials.host,
+            user: credentials.username,
+            password: credentials.password,
+            database: credentials.database,
+            port: credentials.port,
+            ssl: credentials.ssl,
+            connectionTimeoutMillis: options.connectTimeoutMS,
+            application_name:
+                options.applicationName ?? credentials.applicationName,
+            ...(options.extra || {}),
+        }
 
         let pool: Pool | undefined = undefined
         let client: PoolClient | undefined = undefined
