@@ -48,6 +48,25 @@ type SfPassthrough = Pick<
     | "browserActionTimeout"
     | "disableConsoleLogin"
     | "validateDefaultParameters"
+    // OAuth options
+    | "oauthClientId"
+    | "oauthClientSecret"
+    | "oauthAuthorizationUrl"
+    | "oauthTokenRequestUrl"
+    | "oauthScope"
+    | "oauthRedirectUri"
+    | "oauthChallengeMethod"
+    | "oauthEnableSingleUseRefreshTokens"
+    // Workload Identity options
+    | "workloadIdentityProvider"
+    | "workloadIdentityImpersonationPath"
+    | "workloadIdentityAzureEntraIdResource"
+    | "workloadIdentityAzureClientId"
+    // CRL validation options
+    | "certRevocationCheckMode"
+    | "crlAllowCertificatesWithoutCrlURL"
+    | "crlInMemoryCache"
+    | "crlOnDiskCache"
 >
 
 export interface SnowflakeConnectionOptions
@@ -64,9 +83,10 @@ export interface SnowflakeConnectionOptions
     readonly account: string
 
     /**
-     * Snowflake user login name (required).
+     * Snowflake user login name.
+     * Required for password/key-pair auth, optional for OAuth/token/workload-identity auth.
      */
-    readonly username: string
+    readonly username?: string
 
     /**
      * Connection pool options. Uses generic-pool under the hood (via snowflake-sdk's createPool).
@@ -105,7 +125,7 @@ export interface SnowflakeConnectionOptions
         evictionRunIntervalMillis?: number
         /** Number of connections to check per eviction run. Default: 3 */
         numTestsPerEvictionRun?: number
-        /** Idle time (ms) before eviction when pool size > min. Default: undefined (disabled) */
+        /** Idle time (ms) before eviction when pool size > min. Default: -1 (disabled) */
         softIdleTimeoutMillis?: number
         /** Idle time (ms) before unconditional eviction. Default: 30000 */
         idleTimeoutMillis?: number

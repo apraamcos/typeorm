@@ -3666,7 +3666,9 @@ export class SnowflakeQueryRunner
                             referencedColumnNames: foreignKeys.map(
                                 (fk) => fk.referenced_column_name,
                             ),
-                            onDelete: firstFk["on_delete"],
+                            onDelete: firstFk["on_delete"]
+                                ? firstFk["on_delete"].toUpperCase()
+                                : undefined,
                         })
                     },
                 )

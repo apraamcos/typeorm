@@ -153,7 +153,6 @@ export class SnowflakeDriver implements Driver {
         "char",
         "character",
         "string",
-        "text",
         "binary",
         "varbinary",
     ]
@@ -421,6 +420,30 @@ export class SnowflakeDriver implements Driver {
             browserActionTimeout: this.options.browserActionTimeout,
             disableConsoleLogin: this.options.disableConsoleLogin,
             validateDefaultParameters: this.options.validateDefaultParameters,
+            // OAuth options
+            oauthClientId: this.options.oauthClientId,
+            oauthClientSecret: this.options.oauthClientSecret,
+            oauthAuthorizationUrl: this.options.oauthAuthorizationUrl,
+            oauthTokenRequestUrl: this.options.oauthTokenRequestUrl,
+            oauthScope: this.options.oauthScope,
+            oauthRedirectUri: this.options.oauthRedirectUri,
+            oauthChallengeMethod: this.options.oauthChallengeMethod,
+            oauthEnableSingleUseRefreshTokens:
+                this.options.oauthEnableSingleUseRefreshTokens,
+            // Workload Identity options
+            workloadIdentityProvider: this.options.workloadIdentityProvider,
+            workloadIdentityImpersonationPath:
+                this.options.workloadIdentityImpersonationPath,
+            workloadIdentityAzureEntraIdResource:
+                this.options.workloadIdentityAzureEntraIdResource,
+            workloadIdentityAzureClientId:
+                this.options.workloadIdentityAzureClientId,
+            // CRL validation options
+            certRevocationCheckMode: this.options.certRevocationCheckMode,
+            crlAllowCertificatesWithoutCrlURL:
+                this.options.crlAllowCertificatesWithoutCrlURL,
+            crlInMemoryCache: this.options.crlInMemoryCache,
+            crlOnDiskCache: this.options.crlOnDiskCache,
         }
 
         // Remove undefined values so snowflake-sdk doesn't choke on them
@@ -1226,7 +1249,8 @@ export class SnowflakeDriver implements Driver {
      * @returns The sanitized comment string, or `undefined` if the input was falsy.
      */
     protected escapeComment(comment?: string) {
-        if (!comment) return comment
+        if (comment === undefined || comment === null || comment === "")
+            return undefined
 
         comment = comment.replace(/\u0000/g, "") // Null bytes aren't allowed in comments
 
