@@ -277,7 +277,7 @@ export class SnowflakeQueryRunner
     async query(
         query: string,
         parameters?: any[],
-        useStructuredResult: boolean = false,
+        useStructuredResult: boolean = true,
     ): Promise<any> {
         if (this.isReleased) throw new QueryRunnerAlreadyReleasedError()
 
