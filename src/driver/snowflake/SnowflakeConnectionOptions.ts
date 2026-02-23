@@ -1,131 +1,137 @@
 import { BaseDataSourceOptions } from "../../data-source/BaseDataSourceOptions"
+import type { ConnectionOptions as SfConnectionOptions } from "snowflake-sdk"
 
-export interface SnowflakeConnectionOptions extends BaseDataSourceOptions {
+/**
+ * Properties picked directly from `snowflake-sdk`'s `ConnectionOptions`.
+ * JSDoc is inherited from the SDK — no need to duplicate.
+ *
+ * Required by TypeORM: `account`, `username`.
+ * Optional pass-through: everything else the SDK supports that makes sense
+ * for a pooled ORM connection.
+ */
+type SfPassthrough = Pick<
+    SfConnectionOptions,
+    | "password"
+    | "region"
+    | "accessUrl"
+    | "host"
+    | "database"
+    | "schema"
+    | "warehouse"
+    | "role"
+    | "timeout"
+    | "clientSessionKeepAlive"
+    | "clientSessionKeepAliveHeartbeatFrequency"
+    | "jsTreatIntegerAsBigInt"
+    | "application"
+    | "authenticator"
+    | "token"
+    | "privateKey"
+    | "privateKeyPath"
+    | "privateKeyPass"
+    | "proxyHost"
+    | "proxyPort"
+    | "proxyProtocol"
+    | "proxyUser"
+    | "proxyPassword"
+    | "noProxy"
+    | "queryTag"
+    | "fetchAsString"
+    | "arrayBindingThreshold"
+    | "resultPrefetch"
+    | "retryTimeout"
+    | "clientRequestMFAToken"
+    | "clientStoreTemporaryCredential"
+    | "credentialCacheDir"
+    | "passcode"
+    | "passcodeInPassword"
+    | "browserActionTimeout"
+    | "disableConsoleLogin"
+    | "validateDefaultParameters"
+>
+
+export interface SnowflakeConnectionOptions
+    extends BaseDataSourceOptions,
+        SfPassthrough {
     /**
      * Database type.
      */
     readonly type: "snowflake"
 
     /**
-     * The full name of your account (provided by Snowflake). Note that your full account name might include additional segments
-     * that identify the region and cloud platform where your account is hosted.
+     * Your account identifier (required).
      */
-    account: string
+    readonly account: string
 
     /**
-     * Snowflake user login name to connect with.
+     * Snowflake user login name (required).
      */
-    username: string
+    readonly username: string
 
     /**
-     * Password for the user. Set this option if you set the authenticator option to SNOWFLAKE or the Okta URL endpoint for your
-     * Okta account (e.g. https://<okta_account_name>.okta.com) or if you left the authenticator option unset.
-     */
-    password?: string
-
-    /**
-     * @deprecated
-     * The ID for the region where your account is located.
+     * Connection pool options. Uses generic-pool under the hood (via snowflake-sdk's createPool).
      *
-     * This parameter is no longer used because the region information, if required, is included as part of the full account name.
-     * It is documented here only for backward compatibility
-     */
-    region?: string | undefined
-
-    /**
-     * The default database to use for the session after connecting.
-     */
-    database?: string | undefined
-
-    /**
-     * The default schema to use for the session after connecting.
-     */
-    schema?: string | undefined
-
-    /**
-     * The default virtual warehouse to use for the session after connecting. Used for performing queries, loading data, etc.
-     */
-    warehouse?: string | undefined
-
-    /**
-     * The default security role to use for the session after connecting.
-     */
-    role?: string | undefined
-
-    /**
-     * Number of milliseconds to keep the connection alive with no response. Default: 60000 (1 minute).
-     */
-    timeout?: number | undefined
-
-    /**
-     * By default, client connections typically time out approximately 3-4 hours after the most recent query was executed.
+     * generic-pool defaults are already Lambda-friendly (max:1, min:0,
+     * testOnBorrow:false, evictionRunIntervalMillis:0). We only override
+     * `acquireTimeoutMillis` to 30s (generic-pool default is `null` = wait
+     * forever, which would hang Lambda).
      *
-     * If the parameter clientSessionKeepAlive is set to true, the client’s connection to the server will be kept alive
-     * indefinitely, even if no queries are executed.
+     * All options are passed through to generic-pool. For long-running servers,
+     * consider overriding:
+     *  - max: 10 (or higher)
+     *  - testOnBorrow: true (validate connection health before use)
+     *  - acquireTimeoutMillis: 120000 (allow warehouse resume time)
+     *  - evictionRunIntervalMillis: 60000 (enable idle connection cleanup)
+     *  - clientSessionKeepAlive: true (on the top-level options, not pool)
      *
-     * The default setting of this parameter is false.
+     * @see https://docs.snowflake.com/en/developer-guide/node-js/nodejs-driver-connect#creating-a-connection-pool
+     */
+    pool?: {
+        /** Maximum number of connections in the pool. Default: 1 */
+        max?: number
+        /** Minimum number of connections in the pool. Default: 0 */
+        min?: number
+        /** Maximum queued acquire requests. Default: unlimited */
+        maxWaitingClients?: number
+        /** Validate connection before handing it out. Default: false */
+        testOnBorrow?: boolean
+        /** Validate connection when returning to pool. Default: false */
+        testOnReturn?: boolean
+        /** Max time (ms) to wait for a connection from the pool. Default: 30000 (our override; generic-pool default is null = no timeout) */
+        acquireTimeoutMillis?: number
+        /** Whether to use FIFO (true) or LIFO (false) for idle connections. Default: true */
+        fifo?: boolean
+        /** How often (ms) to run the idle connection evictor. 0 = disabled. Default: 0 */
+        evictionRunIntervalMillis?: number
+        /** Number of connections to check per eviction run. Default: 3 */
+        numTestsPerEvictionRun?: number
+        /** Idle time (ms) before eviction when pool size > min. Default: undefined (disabled) */
+        softIdleTimeoutMillis?: number
+        /** Idle time (ms) before unconditional eviction. Default: 30000 */
+        idleTimeoutMillis?: number
+        /** Priority range for acquire requests (0 = highest). Default: 1 */
+        priorityRange?: number
+        /** Whether to start the pool immediately. Default: true */
+        autostart?: boolean
+    }
+
+    /**
+     * Snowflake SDK global log level.
      *
-     * If you set this parameter to true, make sure that your program explicitly disconnects from the server when your program
-     * has finished. Do not exit without disconnecting.
-     */
-    clientSessionKeepAlive?: boolean | undefined
-
-    /**
-     * (Applies only when `clientSessionKeepAlive` is true)
+     * Passed to `snowflake-sdk`'s `configure({ logLevel })` on first connect.
+     * Default: `"ERROR"`.
      *
-     * This parameter sets the frequency (interval in seconds) between heartbeat messages.
+     * @see https://docs.snowflake.com/en/developer-guide/node-js/nodejs-driver-configure
+     */
+    sdkLogLevel?: "ERROR" | "WARN" | "INFO" | "DEBUG" | "TRACE" | "OFF"
+
+    /**
+     * TypeORM's generic `poolSize` option is not applicable to Snowflake.
+     * Snowflake pool sizing is configured via the `pool.max` / `pool.min`
+     * options which map directly to generic-pool's API.
      *
-     * You can loosely think of a connection heartbeat message as substituting for a query and restarting the timeout countdown
-     * for the connection. In other words, if the connection would time out after at least 4 hours of inactivity, the heartbeat
-     * resets the timer so that the timeout will not occur until at least 4 hours after the most recent heartbeat (or query).
-     *
-     * The default value is 3600 seconds (one hour). The valid range of values is 900 - 3600. Because timeouts usually occur after
-     * at least 4 hours, a heartbeat every 1 hour is normally sufficient to keep the connection alive. Heartbeat intervals of less
-     * than 3600 seconds are rarely necessary or useful.
+     * Declaring this as `never` causes a compile-time error if someone
+     * accidentally sets `poolSize`, preventing silent misconfiguration.
      */
-    clientSessionKeepAliveHeartbeatFrequency?: number | undefined
-
-    jsTreatIntegerAsBigInt?: boolean | undefined
-
-    /**
-     * Specifies the name of the client application connecting to Snowflake.
-     */
-    application?: string
-
-    /**
-     * Specifies the authenticator to use for verifying user login credentials. You can set this to one of the following values:
-     *  - SNOWFLAKE: Use the internal Snowflake authenticator. You must also set the password option.
-     *  - EXTERNALBROWSER: Use your web browser to authenticate with Okta, ADFS, or any other SAML 2.0-compliant identity provider
-     *    (IdP) that has been defined for your account.
-     *  - https://<okta_account_name>.okta.com: Use Native SSO through Okta.
-     *  - OAUTH: Use OAuth for authentication. You must also set the token option to the OAuth token (see below).
-     *  - SNOWFLAKE_JWT: Use key pair authentication. See Using Key Pair Authentication & Key Pair Rotation.
-     * The default value is SNOWFLAKE.
-     * For more information on authentication, see {@link https://docs.snowflake.com/en/user-guide/admin-security-fed-auth-use.html Managing/Using Federated Authentication}
-     *  and {@link https://docs.snowflake.com/en/user-guide/admin-security-fed-auth-use.html OAuth with Clients, Drivers, and Connectors}.
-     */
-    authenticator?: string
-
-    /**
-     * Specifies the OAuth token to use for authentication. Set this option if you set the authenticator option to OAUTH.
-     */
-    token?: string
-
-    /**
-     * Specifies the private key (in PEM format) for key pair authentication.
-     * For details, see {@link https://docs.snowflake.com/en/user-guide/nodejs-driver-use.html#label-nodejs-key-pair-authentication Using Key Pair Authentication & Key Pair Rotation}.
-     */
-    privateKey?: string
-
-    /**
-     * Specifies the local path to the private key file (e.g. rsa_key.p8).
-     * For details, see {@link https://docs.snowflake.com/en/user-guide/nodejs-driver-use.html#label-nodejs-key-pair-authentication Using Key Pair Authentication & Key Pair Rotation}.
-     */
-    privateKeyPath?: string
-
-    /**
-     * Specifies the passcode to decrypt the private key file, if the file is encrypted.
-     * For details, see {@link https://docs.snowflake.com/en/user-guide/nodejs-driver-use.html#label-nodejs-key-pair-authentication Using Key Pair Authentication & Key Pair Rotation}.
-     */
-    privateKeyPass?: string
+    poolSize?: never
 }
