@@ -465,20 +465,12 @@ export class SnowflakeDriver implements Driver {
             acquireTimeoutMillis: userPoolOpts.acquireTimeoutMillis ?? 30000,
         }
 
-        const pool = createPool(connectionOptions, poolOptions)
-
-        // Verify pool is functional by acquiring and releasing a connection.
-        // Only assign to this.pool after verification succeeds to avoid leaking
-        // an undrainable pool if the test connection fails.
-        try {
-            const testConn = await pool.acquire()
-            await pool.release(testConn)
-        } catch (err) {
-            await pool.drain().catch(() => {})
-            await pool.clear().catch(() => {})
-            throw err
-        }
-        this.pool = pool
+        // Create the pool lazily — do NOT acquire a test connection here.
+        // In Lambda + suspended-warehouse scenarios, the first acquire can
+        // block for 5-30 s while the warehouse resumes.  That cost should
+        // only be paid when a real query needs the connection, not at
+        // DataSource.initialize() time.
+        this.pool = createPool(connectionOptions, poolOptions)
     }
 
     /**
