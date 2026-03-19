@@ -130,9 +130,9 @@
     "typescript-eslint": "^8.44.0"
   },
   "peerDependencies": {
-    "pg": "^8.16.3",
+    "pg": "^8.20.0",
     "reflect-metadata": "*",
-    "snowflake-sdk": "^2.3.4"
+    "snowflake-sdk": "^2.3.5"
   },
   "peerDependenciesMeta": {
     "@google-cloud/spanner": {
