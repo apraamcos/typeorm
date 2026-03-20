@@ -26,7 +26,7 @@ import { ColumnType } from "../types/ColumnTypes"
 import { IsolationLevel } from "../types/IsolationLevel"
 import { MetadataTableType } from "../types/MetadataTableType"
 import { ReplicationMode } from "../types/ReplicationMode"
-import { PostgresDriver } from "./PostgresDriver"
+import { PostgresDriver, classifyError } from "./PostgresDriver"
 import { sleep } from "./sleep"
 
 /**
@@ -79,15 +79,15 @@ export class PostgresQueryRunner
      * Creates/uses database connection from the connection pool to perform further operations.
      * Returns obtained database connection.
      */
-    async connect(reconnect?: boolean): Promise<any> {
-        if (this.databaseConnection && !reconnect) {
+    async connect(): Promise<any> {
+        if (this.databaseConnection) {
             return this.databaseConnection
         }
 
         this.databaseConnectionPromise = (async () => {
             try {
                 const [connection, release] =
-                    await this.driver.obtainMasterConnection(reconnect)
+                    await this.driver.obtainMasterConnection()
 
                 this.driver.connectedQueryRunners.push(this)
                 this.databaseConnection = connection
@@ -224,150 +224,127 @@ export class PostgresQueryRunner
         query: string,
         parameters?: any[],
         useStructuredResult: boolean = false,
-        reconnect?: boolean,
-        retryDuration?: number,
     ): Promise<any> {
-        // if (this.isReleased && !reconnect) {
-        //     throw new QueryRunnerAlreadyReleasedError()
-        // }
-
         const broadcasterResult = new BroadcasterResult()
+        const startTime = Date.now()
 
-        const databaseConnection = await this.connect(reconnect)
+        while (true) {
+            const databaseConnection = await this.connect()
 
-        try {
-            await this.broadcaster.broadcast("BeforeQuery", query, parameters)
+            try {
+                await this.broadcaster.broadcast(
+                    "BeforeQuery",
+                    query,
+                    parameters,
+                )
 
-            this.driver.connection.logger.logQuery(query, parameters, this)
+                this.driver.connection.logger.logQuery(query, parameters, this)
 
-            const queryStartTime = Date.now()
+                const queryStartTime = Date.now()
 
-            const raw = await databaseConnection.query(query, parameters)
+                const raw = await databaseConnection.query(query, parameters)
 
-            // log slow queries if maxQueryExecution time is set
-            const maxQueryExecutionTime =
-                this.driver.options.maxQueryExecutionTime
-            const queryEndTime = Date.now()
-            const queryExecutionTime = queryEndTime - queryStartTime
+                // log slow queries if maxQueryExecution time is set
+                const maxQueryExecutionTime =
+                    this.driver.options.maxQueryExecutionTime
+                const queryEndTime = Date.now()
+                const queryExecutionTime = queryEndTime - queryStartTime
 
-            this.broadcaster.broadcastAfterQueryEvent(
-                broadcasterResult,
-                query,
-                parameters,
-                true,
-                queryExecutionTime,
-                raw,
-                undefined,
-            )
-
-            if (
-                maxQueryExecutionTime &&
-                queryExecutionTime > maxQueryExecutionTime
-            )
-                this.driver.connection.logger.logQuerySlow(
+                this.broadcaster.broadcastAfterQueryEvent(
+                    broadcasterResult,
+                    query,
+                    parameters,
+                    true,
                     queryExecutionTime,
+                    raw,
+                    undefined,
+                )
+
+                if (
+                    maxQueryExecutionTime &&
+                    queryExecutionTime > maxQueryExecutionTime
+                )
+                    this.driver.connection.logger.logQuerySlow(
+                        queryExecutionTime,
+                        query,
+                        parameters,
+                        this,
+                    )
+
+                const result = new QueryResult()
+
+                if (raw) {
+                    if (raw.hasOwnProperty("rows")) {
+                        result.records = raw.rows
+                    }
+
+                    if (raw.hasOwnProperty("rowCount")) {
+                        result.affected = raw.rowCount
+                    }
+
+                    switch (raw.command) {
+                        case "DELETE":
+                        case "UPDATE":
+                            // for UPDATE and DELETE query additionally return number of affected rows
+                            result.raw = [raw.rows, raw.rowCount]
+                            break
+                        default:
+                            result.raw = raw.rows
+                    }
+
+                    if (!useStructuredResult) {
+                        return result.raw
+                    }
+                }
+
+                return result
+            } catch (err) {
+                const tier = classifyError(err)
+
+                if (tier && !this.isTransactionActive) {
+                    // Release the broken connection before retrying.
+                    // We must NOT retry if a transaction is active — the new
+                    // connection would have no transaction context, and
+                    // re-executing the failed query would run in autocommit
+                    // mode, causing silent data-integrity violations.
+                    await this.releasePostgresConnection(err)
+                    this.databaseConnection = undefined
+                    this.databaseConnectionPromise = undefined
+                    this.isReleased = false
+
+                    if (tier === "tier2") {
+                        const elapsed = Date.now() - startTime
+                        if (elapsed > this.driver.maxRetryDuration) {
+                            this.driver.connection.logger.log(
+                                "warn",
+                                `Exceeded maximum retry duration in query (${elapsed}ms)`,
+                            )
+                            throw new QueryFailedError(query, parameters, err)
+                        }
+                    }
+
+                    await sleep(tier === "tier1" ? 500 : 5000)
+                    continue
+                }
+
+                this.driver.connection.logger.logQueryError(
+                    err,
                     query,
                     parameters,
                     this,
                 )
-
-            const result = new QueryResult()
-            if (raw) {
-                if (raw.hasOwnProperty("rows")) {
-                    result.records = raw.rows
-                }
-
-                if (raw.hasOwnProperty("rowCount")) {
-                    result.affected = raw.rowCount
-                }
-
-                switch (raw.command) {
-                    case "DELETE":
-                    case "UPDATE":
-                        // for UPDATE and DELETE query additionally return number of affected rows
-                        result.raw = [raw.rows, raw.rowCount]
-                        break
-                    default:
-                        result.raw = raw.rows
-                }
-
-                if (!useStructuredResult) {
-                    return result.raw
-                }
-            }
-
-            return result
-        } catch (err) {
-            if (
-                err.message.includes("Connection terminated unexpectedly") ||
-                err.message === "Connection failed"
-            ) {
-                await sleep(500)
-                return await this.query(
+                this.broadcaster.broadcastAfterQueryEvent(
+                    broadcasterResult,
                     query,
                     parameters,
-                    useStructuredResult,
-                    true,
-                    (retryDuration ?? 0) + 500,
+                    false,
+                    undefined,
+                    undefined,
+                    err,
                 )
-            } else if (
-                err.code === "ECONNREFUSED" ||
-                err.code === "ECONNRESET" ||
-                err.code === "ETIMEDOUT" ||
-                err.code === "40001" ||
-                err.code === "58P01" ||
-                err.code === "57014" ||
-                err.code === "57P03" ||
-                err.message === "the database system is in recovery mode" ||
-                err.message === "the database system is starting up" ||
-                err.message ===
-                    "query might have conflicted with replica reconnect" ||
-                (err.message ?? "")
-                    .toLowerCase()
-                    .includes(
-                        "query might have conflicted with replica reconnect",
-                    ) ||
-                (err.message ?? "")
-                    .toLowerCase()
-                    .includes(
-                        "canceling statement due to conflict with recovery",
-                    )
-            ) {
-                if ((retryDuration ?? 0) > this.driver.maxRetryDuration) {
-                    console.info(
-                        "Exceeded maximum retry duration in query ",
-                        err,
-                    )
-                    throw new QueryFailedError(query, parameters, err)
-                }
-                await sleep(5000)
-                return await this.query(
-                    query,
-                    parameters,
-                    useStructuredResult,
-                    true,
-                    (retryDuration ?? 0) + 5000,
-                )
-            } else {
-                console.info("Unhandled error in query ", err)
-            }
-            this.driver.connection.logger.logQueryError(
-                err,
-                query,
-                parameters,
-                this,
-            )
-            this.broadcaster.broadcastAfterQueryEvent(
-                broadcasterResult,
-                query,
-                parameters,
-                false,
-                undefined,
-                undefined,
-                err,
-            )
 
-            throw new QueryFailedError(query, parameters, err)
+                throw new QueryFailedError(query, parameters, err)
+            }
         }
     }
 

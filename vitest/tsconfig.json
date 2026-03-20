@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../build/vitest",
+    "declaration": false,
+    "sourceMap": false,
+    "noUnusedLocals": false,
+    "types": ["vitest/globals"]
+  },
+  "include": [".", "../src"],
+  "exclude": ["../build", "../node_modules"]
+}

@@ -74,7 +74,7 @@
     "dedent": "^1.7.0",
     "dotenv": "^16.6.1",
     "glob": "^10.4.5",
-    "reflect-metadata": "^0.2.2",
+    "reflect-metadata": "*",
     "sha.js": "^2.4.12",
     "sql-highlight": "^6.1.0",
     "tslib": "^2.8.1",
@@ -84,6 +84,7 @@
   "devDependencies": {
     "@eslint/js": "^9.36.0",
     "@sap/hana-client": "^2.26.18",
+    "@swc/core": "^1.15.18",
     "@tsconfig/node16": "^16.1.5",
     "@types/chai": "^4.3.20",
     "@types/chai-as-promised": "^7.1.8",
@@ -127,7 +128,9 @@
     "source-map-support": "^0.5.21",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.44.0"
+    "typescript-eslint": "^8.44.0",
+    "unplugin-swc": "^1.5.9",
+    "vitest": "^4.1.0"
   },
   "peerDependencies": {
     "pg": "^8.20.0",
@@ -198,6 +201,7 @@
     "lint": "eslint . --ext .ts",
     "format": "prettier --write --end-of-line auto \"./src/**/*.ts\" \"./test/**/*.ts\" \"./sample/**/*.ts\"",
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s -r 2",
+    "vitest": "vitest run",
     "clean": "rimraf package-lock.json && rimraf node_modules && npm i"
   },
   "bin": {
