@@ -33,7 +33,7 @@ import { sleep } from "./sleep"
 /**
  * Classify a Postgres error into a retry tier.
  *
- *   - tier1: "Connection terminated unexpectedly" / "Connection failed"
+ *   - tier1: "Connection terminated unexpectedly"
  *            → retry indefinitely with 500ms sleep
  *   - tier2: ECONNREFUSED, ECONNRESET, ETIMEDOUT, PG codes (40001, 58P01,
  *            57014, 57P03), recovery mode, replica conflict, etc.
@@ -44,14 +44,13 @@ export function classifyError(err: any): "tier1" | "tier2" | null {
     const message = err?.message ?? ""
     const code = err?.code
 
-    if (
-        message.includes("Connection terminated unexpectedly") ||
-        message === "Connection failed"
-    ) {
+    if (message.includes("Connection terminated unexpectedly")) {
         return "tier1"
     }
 
     if (
+        message.includes("Connection terminated due to connection timeout") ||
+        message.includes("timeout exceeded when trying to connect") ||
         code === "ECONNREFUSED" ||
         code === "ECONNRESET" ||
         code === "ETIMEDOUT" ||
@@ -438,12 +437,13 @@ export class PostgresDriver implements Driver {
                     } catch (_) {}
                 }
 
-                const message = err?.message ?? ""
-
-                // If createPool itself failed, the pool is already cleaned up
-                // inside createPool(). But if the probe failed (getVersion etc.)
-                // the pool might be broken — destroy it so next retry starts fresh.
-                if (this.master && message !== "Connection failed") {
+                // If the probe or pool acquisition failed, decide whether
+                // to destroy the pool or keep it for the next attempt.
+                // tier-1 ("Connection terminated unexpectedly") means one
+                // connection died but the pool itself is likely fine — keep it.
+                // tier-2 or unknown errors suggest the pool may be broken.
+                const tier = classifyError(err)
+                if (this.master && tier !== "tier1") {
                     try {
                         this.master.removeAllListeners()
                         await this.master.end()
@@ -451,7 +451,6 @@ export class PostgresDriver implements Driver {
                     this.master = undefined
                 }
 
-                const tier = classifyError(err)
                 if (tier === "tier1") {
                     await sleep(500)
                 } else if (tier === "tier2") {
@@ -1310,40 +1309,13 @@ export class PostgresDriver implements Driver {
      */
     async obtainMasterConnection(): Promise<[PoolClient, Function]> {
         if (!this.master) {
-            throw new ConnectionIsNotSetError("Connection failed")
+            throw new ConnectionIsNotSetError("postgres")
         }
 
-        const connectionTimeout = this.options.connectTimeoutMS || 10000
-        let client: PoolClient | undefined
-
-        // Acquire a client from the pool with a timeout.
-        // Uses Promise.race so that if the timeout fires, we still capture
-        // and release the client that pool.connect() may eventually return.
-        const connectPromise = this.master.connect()
-        let timer: ReturnType<typeof setTimeout>
-        const timeoutPromise = new Promise<never>((_, reject) => {
-            timer = setTimeout(
-                () => reject(new Error("Connection failed")),
-                connectionTimeout,
-            )
-        })
-
-        try {
-            client = await Promise.race([connectPromise, timeoutPromise])
-            clearTimeout(timer!)
-        } catch (error) {
-            clearTimeout(timer!)
-            // If pool.connect() is still pending, ensure the client is
-            // released when it eventually resolves to avoid pool exhaustion.
-            connectPromise
-                .then((c) => {
-                    try {
-                        c.release()
-                    } catch (_) {}
-                })
-                .catch(() => {})
-            throw error
-        }
+        // pg Pool handles timeouts internally via connectionTimeoutMillis.
+        // No artificial setTimeout wrapper — avoids spurious "Connection failed"
+        // errors and timer/client leaks.
+        const client = await this.master.connect()
 
         const safeRelease = () => {
             try {
@@ -1631,9 +1603,14 @@ export class PostgresDriver implements Driver {
             database: credentials.database,
             port: credentials.port,
             ssl: credentials.ssl,
-            connectionTimeoutMillis: options.connectTimeoutMS,
+            connectionTimeoutMillis: options.connectTimeoutMS || 10000,
             application_name:
                 options.applicationName ?? credentials.applicationName,
+            // TCP keepalive prevents AWS NAT Gateway / Security Groups from
+            // silently dropping idle connections (~350s). Without this, the
+            // pool hands out dead sockets on Lambda warm invocations.
+            keepAlive: true,
+            keepAliveInitialDelayMillis: 10000,
             ...(options.extra || {}),
         }
 
@@ -1647,6 +1624,15 @@ export class PostgresDriver implements Driver {
             })
 
             pool.on("connect", (client) => {
+                // Belt-and-suspenders: force TCP keepAlive on the raw socket.
+                // pg's keepAlive pool option should handle this, but setting
+                // it directly on the socket guarantees it regardless of pg
+                // version or internal timing.
+                const stream = (client as any).connection?.stream
+                if (stream && typeof stream.setKeepAlive === "function") {
+                    stream.setKeepAlive(true, 10000)
+                }
+
                 client.on("error", (err: Error) => {
                     logger.log("warn", `Postgres client error: ${err}`)
                 })
@@ -1658,37 +1644,9 @@ export class PostgresDriver implements Driver {
                 }
             })
 
-            const connectionTimeout = options.connectTimeoutMS || 10000
-
-            // Use Promise.race for connection with proper cleanup on timeout
-            const connectPromise = pool.connect()
-            let connTimer: ReturnType<typeof setTimeout>
-            const connTimeoutPromise = new Promise<never>((_, reject) => {
-                connTimer = setTimeout(
-                    () => reject(new Error("Connection timeout")),
-                    connectionTimeout,
-                )
-            })
-
-            let client: PoolClient
-            try {
-                client = await Promise.race([
-                    connectPromise,
-                    connTimeoutPromise,
-                ])
-                clearTimeout(connTimer!)
-            } catch (connError) {
-                clearTimeout(connTimer!)
-                // If pool.connect() is still pending, release when it resolves
-                connectPromise
-                    .then((c) => {
-                        try {
-                            c.release()
-                        } catch (_) {}
-                    })
-                    .catch(() => {})
-                throw connError
-            }
+            // pg Pool handles connection timeouts via connectionTimeoutMillis.
+            // No artificial setTimeout — avoids spurious timeout errors.
+            const client = await pool.connect()
 
             try {
                 await client.query("SELECT 1")
@@ -1710,7 +1668,7 @@ export class PostgresDriver implements Driver {
                 }
             }
 
-            throw new Error("Connection failed")
+            throw error
         }
     }
 

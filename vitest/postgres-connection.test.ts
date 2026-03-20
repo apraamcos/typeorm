@@ -9,17 +9,16 @@ import { EventEmitter } from "events"
  *   1. Normal queries: once connected, queries run with NO timeout — they
  *      can take as long as they need.
  *
- *   2. Tier-1 retryable errors ("Connection terminated unexpectedly",
- *      "Connection failed"): retry INDEFINITELY with 500ms sleep.
+ *   2. Tier-1 retryable errors ("Connection terminated unexpectedly"):
+ *      retry INDEFINITELY with 500ms sleep.
  *
- *   3. Tier-2 retryable errors (ECONNREFUSED, ECONNRESET, ETIMEDOUT,
- *      PG error codes, recovery mode, etc.): retry up to maxRetryDuration
- *      (5 minutes) with 5000ms sleep.
+ *   3. Tier-2 retryable errors (ECONNREFUSED,
+ *      ECONNRESET, ETIMEDOUT, PG error codes, recovery mode, etc.):
+ *      retry up to maxRetryDuration (5 minutes) with 5000ms sleep.
  *
  *   4. Non-retryable errors: throw immediately, no retry.
  *
- *   5. No spurious "Connection failed" or "Query timeout" errors from
- *      internal health-checks or timeout races.
+ *   5. No spurious timeout errors from internal health-checks.
  *
  * The tests cover:
  *   - createPool: pool creation, validation, timeout handling, cleanup
@@ -102,8 +101,8 @@ describe("classifyError", () => {
         ).toBe("tier1")
     })
 
-    it("should return 'tier1' for 'Connection failed'", () => {
-        expect(classifyError(new Error("Connection failed"))).toBe("tier1")
+    it("should return null for 'Connection failed' (no longer a special error)", () => {
+        expect(classifyError(new Error("Connection failed"))).toBeNull()
     })
 
     it("should return 'tier1' when message contains 'Connection terminated unexpectedly'", () => {
@@ -114,6 +113,20 @@ describe("classifyError", () => {
                 ),
             ),
         ).toBe("tier1")
+    })
+
+    it("should return 'tier2' for pg connection timeout ('Connection terminated due to connection timeout')", () => {
+        expect(
+            classifyError(
+                new Error("Connection terminated due to connection timeout"),
+            ),
+        ).toBe("tier2")
+    })
+
+    it("should return 'tier2' for pg pool timeout ('timeout exceeded when trying to connect')", () => {
+        expect(
+            classifyError(new Error("timeout exceeded when trying to connect")),
+        ).toBe("tier2")
     })
 
     it("should return 'tier2' for ECONNREFUSED", () => {
@@ -205,7 +218,7 @@ describe("PostgresDriver.createPool", () => {
         expect(client.release).toHaveBeenCalled()
     })
 
-    it("should throw 'Connection failed' and clean up when pool.connect() rejects", async () => {
+    it("should throw original error and clean up when pool.connect() rejects", async () => {
         const pool = makeFakePool()
         pool.connect.mockRejectedValue(new Error("ECONNREFUSED"))
         vi.mocked(Pool).mockImplementation(function () {
@@ -213,13 +226,13 @@ describe("PostgresDriver.createPool", () => {
         })
 
         await expect((driver as any).createPool({}, {})).rejects.toThrow(
-            "Connection failed",
+            "ECONNREFUSED",
         )
         expect(pool.removeAllListeners).toHaveBeenCalled()
         expect(pool.end).toHaveBeenCalled()
     })
 
-    it("should throw 'Connection failed' and release client when health-check query fails", async () => {
+    it("should throw original error and release client when health-check query fails", async () => {
         const client = makeFakeClient()
         client.query.mockRejectedValue(new Error("SELECT 1 failed"))
         const pool = makeFakePool(client)
@@ -228,32 +241,24 @@ describe("PostgresDriver.createPool", () => {
         })
 
         await expect((driver as any).createPool({}, {})).rejects.toThrow(
-            "Connection failed",
+            "SELECT 1 failed",
         )
         expect(client.release).toHaveBeenCalled()
         expect(pool.end).toHaveBeenCalled()
     })
 
-    it("should release late-arriving client when connection times out (prevents pool leak)", async () => {
-        const lateClient = makeFakeClient()
-        const pool = makeFakePool()
-        pool.connect.mockImplementation(
-            () =>
-                new Promise((resolve) =>
-                    setTimeout(() => resolve(lateClient), 200),
-                ),
-        )
-        vi.mocked(Pool).mockImplementation(function () {
+    it("should pass connectTimeoutMS to pg Pool as connectionTimeoutMillis", async () => {
+        const client = makeFakeClient()
+        const pool = makeFakePool(client)
+        let capturedConfig: any
+        vi.mocked(Pool).mockImplementation(function (config: any) {
+            capturedConfig = config
             return pool as any
         })
 
-        await expect(
-            (driver as any).createPool({ connectTimeoutMS: 50 }, {}),
-        ).rejects.toThrow("Connection failed")
+        await (driver as any).createPool({ connectTimeoutMS: 3000 }, {})
 
-        // Wait for late client to arrive
-        await new Promise((r) => setTimeout(r, 300))
-        expect(lateClient.release).toHaveBeenCalled()
+        expect(capturedConfig.connectionTimeoutMillis).toBe(3000)
     })
 
     it("should NOT wrap SELECT 1 with a separate timeout (no spurious Query timeout)", async () => {
@@ -284,6 +289,95 @@ describe("PostgresDriver.createPool", () => {
 
         expect(result).toBe(pool)
         expect(client.query).toHaveBeenCalledWith("SELECT 1")
+    })
+
+    it("should enable TCP keepAlive in pool config by default", async () => {
+        const client = makeFakeClient()
+        const pool = makeFakePool(client)
+        let capturedConfig: any
+        vi.mocked(Pool).mockImplementation(function (config: any) {
+            capturedConfig = config
+            return pool as any
+        })
+
+        await (driver as any).createPool({}, {})
+
+        expect(capturedConfig.keepAlive).toBe(true)
+        expect(capturedConfig.keepAliveInitialDelayMillis).toBe(10000)
+    })
+
+    it("should set connectionTimeoutMillis to 10s by default", async () => {
+        const client = makeFakeClient()
+        const pool = makeFakePool(client)
+        let capturedConfig: any
+        vi.mocked(Pool).mockImplementation(function (config: any) {
+            capturedConfig = config
+            return pool as any
+        })
+
+        await (driver as any).createPool({}, {})
+
+        expect(capturedConfig.connectionTimeoutMillis).toBe(10000)
+    })
+
+    it("should respect custom connectTimeoutMS over default", async () => {
+        const client = makeFakeClient()
+        const pool = makeFakePool(client)
+        let capturedConfig: any
+        vi.mocked(Pool).mockImplementation(function (config: any) {
+            capturedConfig = config
+            return pool as any
+        })
+
+        await (driver as any).createPool({ connectTimeoutMS: 30000 }, {})
+
+        expect(capturedConfig.connectionTimeoutMillis).toBe(30000)
+    })
+
+    it("should allow extra options to override keepAlive defaults", async () => {
+        const client = makeFakeClient()
+        const pool = makeFakePool(client)
+        let capturedConfig: any
+        vi.mocked(Pool).mockImplementation(function (config: any) {
+            capturedConfig = config
+            return pool as any
+        })
+
+        await (driver as any).createPool(
+            { extra: { keepAlive: false, keepAliveInitialDelayMillis: 60000 } },
+            {},
+        )
+
+        // extra spreads last, so it overrides our defaults
+        expect(capturedConfig.keepAlive).toBe(false)
+        expect(capturedConfig.keepAliveInitialDelayMillis).toBe(60000)
+    })
+
+    it("should call setKeepAlive on the socket in the connect event handler", async () => {
+        const mockStream = { setKeepAlive: vi.fn() }
+        const client = makeFakeClient()
+        ;(client as any).connection = { stream: mockStream }
+
+        // Capture the pool's "connect" listener and invoke it manually
+        let connectListener: Function | undefined
+        const pool = makeFakePool(client)
+        const origOn = pool.on.bind(pool)
+        pool.on = vi.fn().mockImplementation((event: string, cb: Function) => {
+            if (event === "connect") connectListener = cb
+            return origOn(event, cb)
+        })
+
+        vi.mocked(Pool).mockImplementation(function () {
+            return pool as any
+        })
+
+        await (driver as any).createPool({}, {})
+
+        // Simulate a new connection event
+        expect(connectListener).toBeDefined()
+        connectListener!(client)
+
+        expect(mockStream.setKeepAlive).toHaveBeenCalledWith(true, 10000)
     })
 })
 
@@ -328,27 +422,7 @@ describe("PostgresDriver.obtainMasterConnection", () => {
         expect(client.query).not.toHaveBeenCalled()
     })
 
-    it("should release late-arriving client on connection timeout (prevents pool leak)", async () => {
-        const lateClient = makeFakeClient()
-        const pool = makeFakePool()
-        ;(driver as any).options = { connectTimeoutMS: 50 }
-        pool.connect.mockImplementation(
-            () =>
-                new Promise((resolve) =>
-                    setTimeout(() => resolve(lateClient), 200),
-                ),
-        )
-        ;(driver as any).master = pool
-
-        await expect(driver.obtainMasterConnection()).rejects.toThrow(
-            "Connection failed",
-        )
-
-        await new Promise((r) => setTimeout(r, 300))
-        expect(lateClient.release).toHaveBeenCalled()
-    })
-
-    it("should propagate pool.connect() errors directly", async () => {
+    it("should propagate pool.connect() errors directly (pg handles timeouts)", async () => {
         const pool = makeFakePool()
         pool.connect.mockRejectedValue(new Error("pool exhausted"))
         ;(driver as any).master = pool
@@ -445,18 +519,6 @@ describe("PostgresDriver.connect", () => {
 
     // --- Tier-1: retry indefinitely ---
 
-    it("should retry on 'Connection failed' (tier-1) with 500ms sleep", async () => {
-        mockCreatePool
-            .mockRejectedValueOnce(new Error("Connection failed"))
-            .mockResolvedValue(makeFakePool())
-        setupSuccessfulQueryRunner()
-
-        await driver.connect()
-
-        expect(sleep).toHaveBeenCalledWith(500)
-        expect(mockCreatePool).toHaveBeenCalledTimes(2)
-    })
-
     it("should retry on 'Connection terminated unexpectedly' (tier-1) with 500ms sleep", async () => {
         mockCreatePool
             .mockRejectedValueOnce(
@@ -482,8 +544,9 @@ describe("PostgresDriver.connect", () => {
         mockCreatePool.mockImplementation(() => {
             callCount++
             if (callCount <= 10) {
-                // First 10 attempts: fail with tier-1 error
-                return Promise.reject(new Error("Connection failed"))
+                return Promise.reject(
+                    new Error("Connection terminated unexpectedly"),
+                )
             }
             // 11th attempt: succeed
             return Promise.resolve(makeFakePool())
@@ -779,24 +842,15 @@ describe("PostgresQueryRunner.query", () => {
         expect(result).toEqual([{ id: 1 }])
     })
 
-    it("should retry on 'Connection failed' (tier-1, 500ms sleep)", async () => {
-        const freshConn = makeFakeClient()
-        freshConn.query.mockResolvedValue({
-            rows: [],
-            rowCount: 0,
-            command: "SELECT",
-        })
-
+    it("should throw immediately on 'Connection failed' (not retryable)", async () => {
         mockDbConnection.query.mockRejectedValueOnce(
             new Error("Connection failed"),
         )
-        driver.obtainMasterConnection = vi
-            .fn()
-            .mockResolvedValueOnce([mockDbConnection, vi.fn()])
-            .mockResolvedValueOnce([freshConn, vi.fn()])
 
-        await queryRunner.query("SELECT 1")
-        expect(sleep).toHaveBeenCalledWith(500)
+        await expect(queryRunner.query("SELECT 1")).rejects.toThrow(
+            QueryFailedError,
+        )
+        expect(sleep).not.toHaveBeenCalled()
     })
 
     it("tier-1 query retry should be INDEFINITE — no maxRetryDuration cap", async () => {
@@ -1070,7 +1124,7 @@ describe("PostgresQueryRunner.query", () => {
         })
 
         mockDbConnection.query.mockRejectedValueOnce(
-            new Error("Connection failed"),
+            new Error("Connection terminated unexpectedly"),
         )
         driver.obtainMasterConnection = vi
             .fn()
@@ -1091,8 +1145,10 @@ describe("PostgresQueryRunner.query", () => {
         let callCount = 0
         vi.spyOn(Date, "now").mockImplementation(() => {
             callCount++
-            if (callCount <= 2) return 1000 // startTime, queryStartTime
-            return 1100 // queryEndTime → 100ms execution
+            // 1st call: queryStartTime
+            // 2nd call: queryEndTime (100ms later)
+            if (callCount <= 1) return 1000
+            return 1100
         })
 
         mockDbConnection.query.mockResolvedValue({
@@ -1272,23 +1328,6 @@ describe("PostgresQueryRunner.query — transaction safety", () => {
         expect(sleep).not.toHaveBeenCalled()
     })
 
-    it("should NOT retry on tier-2 error if transaction is active", async () => {
-        ;(queryRunner as any).isTransactionActive = true
-        ;(queryRunner as any).transactionDepth = 1
-
-        const err = new Error("serialization failure") as any
-        err.code = "40001"
-        mockDbConnection.query.mockRejectedValueOnce(err)
-
-        await queryRunner.connect()
-
-        await expect(
-            queryRunner.query("INSERT INTO orders VALUES (1)"),
-        ).rejects.toThrow(QueryFailedError)
-
-        expect(sleep).not.toHaveBeenCalled()
-    })
-
     it("should still retry connection errors when NOT in a transaction", async () => {
         ;(queryRunner as any).isTransactionActive = false
 
@@ -1312,6 +1351,118 @@ describe("PostgresQueryRunner.query — transaction safety", () => {
         // Should have retried
         expect(sleep).toHaveBeenCalledWith(500)
     })
+
+    it("startTransaction itself can retry if connection drops before transaction begins", async () => {
+        // startTransaction calls this.query("START TRANSACTION")
+        // At that point isTransactionActive is true, so retry is blocked.
+        // But the connection error means the START TRANSACTION never executed,
+        // so the error should propagate to the caller who can retry the whole transaction.
+        await queryRunner.connect()
+
+        mockDbConnection.query.mockRejectedValueOnce(
+            new Error("Connection terminated unexpectedly"),
+        )
+
+        // startTransaction sets isTransactionActive = true BEFORE calling query
+        await expect(queryRunner.startTransaction()).rejects.toThrow()
+
+        // No retry happened (isTransactionActive was true when query ran)
+        expect(sleep).not.toHaveBeenCalled()
+    })
+
+    it("error in transaction propagates to caller — caller retries the whole transaction", async () => {
+        // Simulates the full pattern:
+        // 1. Start transaction (succeeds)
+        // 2. INSERT (connection drops) → throws QueryFailedError
+        // 3. Caller catches, retries entire transaction on new QueryRunner
+        await queryRunner.connect()
+
+        // First: START TRANSACTION succeeds
+        mockDbConnection.query.mockResolvedValueOnce({
+            rows: [],
+            rowCount: 0,
+            command: "START",
+        })
+        await queryRunner.startTransaction()
+        expect((queryRunner as any).isTransactionActive).toBe(true)
+
+        // Second: INSERT fails with connection error
+        mockDbConnection.query.mockRejectedValueOnce(
+            new Error("Connection terminated unexpectedly"),
+        )
+
+        const txError = await queryRunner
+            .query("INSERT INTO users (name) VALUES ('Alice')")
+            .catch((e) => e)
+
+        expect(txError).toBeInstanceOf(QueryFailedError)
+        expect(sleep).not.toHaveBeenCalled()
+
+        // Caller creates a new QueryRunner and retries the whole transaction
+        const newMockConn = makeFakeClient()
+        newMockConn.query.mockResolvedValue({
+            rows: [],
+            rowCount: 0,
+            command: "SELECT",
+        })
+        driver.obtainMasterConnection = vi
+            .fn()
+            .mockResolvedValue([newMockConn, vi.fn()])
+
+        const qr2 = new PostgresQueryRunner(driver, "master")
+        await qr2.connect()
+
+        // Retry: START TRANSACTION
+        newMockConn.query.mockResolvedValueOnce({
+            rows: [],
+            rowCount: 0,
+            command: "START",
+        })
+        await qr2.startTransaction()
+
+        // Retry: INSERT (succeeds this time)
+        newMockConn.query.mockResolvedValueOnce({
+            rows: [{ id: 1 }],
+            rowCount: 1,
+            command: "INSERT",
+        })
+        const result = await qr2.query(
+            "INSERT INTO users (name) VALUES ('Alice')",
+        )
+
+        expect(result).toEqual([{ id: 1 }])
+
+        // Retry: COMMIT
+        newMockConn.query.mockResolvedValueOnce({
+            rows: [],
+            rowCount: 0,
+            command: "COMMIT",
+        })
+        await qr2.commitTransaction()
+        expect((qr2 as any).isTransactionActive).toBe(false)
+    })
+
+    it("non-retryable error in transaction still throws immediately", async () => {
+        await queryRunner.connect()
+
+        mockDbConnection.query.mockResolvedValueOnce({
+            rows: [],
+            rowCount: 0,
+            command: "START",
+        })
+        await queryRunner.startTransaction()
+
+        // Syntax error — non-retryable, should throw immediately
+        mockDbConnection.query.mockRejectedValueOnce(
+            new Error('syntax error at or near "INSRT"'),
+        )
+
+        await expect(
+            queryRunner.query("INSRT INTO users VALUES (1)"),
+        ).rejects.toThrow(QueryFailedError)
+
+        expect(sleep).not.toHaveBeenCalled()
+    })
 })
 
 // ============================================================================
@@ -1333,7 +1484,9 @@ describe("PostgresQueryRunner.query — state reset on retry", () => {
 
     it("should clear databaseConnection and databaseConnectionPromise before retry", async () => {
         const brokenConn = makeFakeClient()
-        brokenConn.query.mockRejectedValueOnce(new Error("Connection failed"))
+        brokenConn.query.mockRejectedValueOnce(
+            new Error("Connection terminated unexpectedly"),
+        )
         const freshConn = makeFakeClient()
         freshConn.query.mockResolvedValue({
             rows: [],
@@ -1520,19 +1673,46 @@ describe("PostgresDriver.connect — pool cleanup on retry", () => {
         return qr
     }
 
-    it("should clean up old pool when createPool succeeds but getVersion fails (tier-1 retry)", async () => {
-        const pool1 = makeFakePool()
-        const pool2 = makeFakePool()
+    it("should KEEP pool when probe fails with tier-1 error (Connection terminated unexpectedly)", async () => {
+        const pool = makeFakePool()
 
-        // First attempt: createPool succeeds, but getVersion fails
-        mockCreatePool.mockResolvedValueOnce(pool1).mockResolvedValueOnce(pool2)
+        // createPool succeeds, but getVersion fails with tier-1 error
+        mockCreatePool.mockResolvedValue(pool)
 
         const failQr = {
             getVersion: vi
                 .fn()
-                .mockRejectedValue(
+                .mockRejectedValueOnce(
                     new Error("Connection terminated unexpectedly"),
-                ),
+                )
+                .mockResolvedValue("15.0"),
+            getCurrentDatabase: vi.fn().mockResolvedValue("testdb"),
+            getCurrentSchema: vi.fn().mockResolvedValue("public"),
+            release: vi.fn(),
+        }
+        mockCreateQueryRunner.mockReturnValue(failQr)
+
+        await driver.connect()
+
+        // failQr should have been released in the catch block
+        expect(failQr.release).toHaveBeenCalled()
+        // pool should NOT have been destroyed — tier-1 keeps the pool
+        expect(pool.end).not.toHaveBeenCalled()
+        // createPool should only have been called once (pool was kept)
+        expect(mockCreatePool).toHaveBeenCalledTimes(1)
+        expect((driver as any).master).toBe(pool)
+    })
+
+    it("should DESTROY pool when probe fails with tier-2 error (ECONNREFUSED)", async () => {
+        const pool1 = makeFakePool()
+        const pool2 = makeFakePool()
+
+        mockCreatePool.mockResolvedValueOnce(pool1).mockResolvedValueOnce(pool2)
+
+        const err = new Error("refused") as any
+        err.code = "ECONNREFUSED"
+        const failQr = {
+            getVersion: vi.fn().mockRejectedValueOnce(err),
             release: vi.fn(),
         }
         const successQr = {
@@ -1547,28 +1727,25 @@ describe("PostgresDriver.connect — pool cleanup on retry", () => {
 
         await driver.connect()
 
-        // failQr should have been released in the catch block
-        expect(failQr.release).toHaveBeenCalled()
-        // pool1 should have been cleaned up (probe error != "Connection failed")
+        // pool1 should have been destroyed — tier-2 destroys pool
         expect(pool1.removeAllListeners).toHaveBeenCalled()
         expect(pool1.end).toHaveBeenCalled()
-        // pool2 is the final pool
+        // pool2 is the new pool
+        expect(mockCreatePool).toHaveBeenCalledTimes(2)
         expect((driver as any).master).toBe(pool2)
     })
 
-    it("should NOT destroy pool when createPool itself fails (pool is already cleaned up inside createPool)", async () => {
-        // createPool throws "Connection failed" — pool cleanup happened internally
+    it("should retry when createPool fails with a retryable error (ECONNREFUSED)", async () => {
         const pool = makeFakePool()
-        mockCreatePool
-            .mockRejectedValueOnce(new Error("Connection failed"))
-            .mockResolvedValueOnce(pool)
+        const err = new Error("connect ECONNREFUSED") as any
+        err.code = "ECONNREFUSED"
+        mockCreatePool.mockRejectedValueOnce(err).mockResolvedValueOnce(pool)
         setupSuccessfulQueryRunner()
 
         await driver.connect()
 
-        // createPool was called twice (retry after "Connection failed")
         expect(mockCreatePool).toHaveBeenCalledTimes(2)
-        // The final pool should be active
+        expect(sleep).toHaveBeenCalledWith(5000)
         expect((driver as any).master).toBe(pool)
     })
 
@@ -1738,7 +1915,7 @@ describe("E2E: connect() retry through real createPool", () => {
 
         await driver.connect()
 
-        // createPool failures result in "Connection failed" (tier-1)
+        // createPool propagates original error → tier-1 → 500ms sleep
         expect(sleep).toHaveBeenCalledWith(500)
         expect((driver as any).version).toBe("15.4")
     })

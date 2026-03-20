@@ -226,7 +226,7 @@ export class PostgresQueryRunner
         useStructuredResult: boolean = false,
     ): Promise<any> {
         const broadcasterResult = new BroadcasterResult()
-        const startTime = Date.now()
+        let retryStartTime: number | undefined
 
         while (true) {
             const databaseConnection = await this.connect()
@@ -313,7 +313,10 @@ export class PostgresQueryRunner
                     this.isReleased = false
 
                     if (tier === "tier2") {
-                        const elapsed = Date.now() - startTime
+                        // Start the retry clock from the first failure,
+                        // not from when the query started executing.
+                        if (!retryStartTime) retryStartTime = Date.now()
+                        const elapsed = Date.now() - retryStartTime
                         if (elapsed > this.driver.maxRetryDuration) {
                             this.driver.connection.logger.log(
                                 "warn",
