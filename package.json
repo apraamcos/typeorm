@@ -135,7 +135,7 @@
   "peerDependencies": {
     "pg": "^8.20.0",
     "reflect-metadata": "*",
-    "snowflake-sdk": "^2.3.5"
+    "snowflake-sdk": "^2.4.0"
   },
   "peerDependenciesMeta": {
     "@google-cloud/spanner": {
