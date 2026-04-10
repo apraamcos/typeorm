@@ -1317,10 +1317,10 @@ export class PostgresDriver implements Driver {
         // errors and timer/client leaks.
         const client = await this.master.connect()
 
-        const safeRelease = () => {
+        const safeRelease = (err: any) => {
             try {
                 if (client && typeof client.release === "function") {
-                    client.release()
+                    client.release(err)
                 }
             } catch (releaseError) {
                 this.connection.logger.log(
@@ -1329,7 +1329,6 @@ export class PostgresDriver implements Driver {
                 )
             }
         }
-
         return [client, safeRelease]
     }
 
