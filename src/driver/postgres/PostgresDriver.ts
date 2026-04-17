@@ -29,6 +29,91 @@ import { InstanceChecker } from "../../util/InstanceChecker"
 import { UpsertType } from "../types/UpsertType"
 import { Pool, PoolClient, PoolConfig } from "pg"
 import { sleep } from "./sleep"
+import { getRetryDeadline, withRetryDeadline } from "./retryContext"
+
+/**
+ * Walk an error object and every nested cause / aggregate / wrapper it can
+ * find, collecting every `code` and `message` seen along the way. This makes
+ * {@link classifyError} robust to:
+ *
+ *   - Node 16+ `Error.cause` chains (pg sometimes wraps socket errors)
+ *   - `AggregateError.errors` (DNS resolution returning multiple addresses,
+ *     all of which failed with ECONNREFUSED)
+ *   - TypeORM's own `QueryFailedError.driverError` wrapping
+ *   - Legacy `originalError` / `innerError` wrappers some drivers use
+ *   - Errors where the `code` got stringified into `message` and the
+ *     structured `code` field was lost
+ *
+ * Depth and visited-set guards prevent pathological cycles or huge trees
+ * from blocking the event loop.
+ */
+function collectErrorFingerprints(
+    err: any,
+): { codes: Set<string>; messages: string[] } {
+    const codes = new Set<string>()
+    const messages: string[] = []
+    const seen = new Set<any>()
+
+    const visit = (e: any, depth: number): void => {
+        if (e === null || e === undefined) return
+        if (depth > 8) return
+        if (typeof e !== "object" && typeof e !== "string") return
+
+        if (typeof e === "string") {
+            messages.push(e)
+            return
+        }
+
+        if (seen.has(e)) return
+        seen.add(e)
+
+        if (typeof e.code === "string") codes.add(e.code)
+        if (typeof e.errno === "string") codes.add(e.errno)
+        if (typeof e.sqlState === "string") codes.add(e.sqlState)
+        if (typeof e.message === "string") messages.push(e.message)
+
+        // Error.cause (Node >= 16.9)
+        if ("cause" in e) visit((e as any).cause, depth + 1)
+
+        // AggregateError.errors
+        if (Array.isArray((e as any).errors)) {
+            for (const inner of (e as any).errors) visit(inner, depth + 1)
+        }
+
+        // TypeORM / driver wrapper conventions
+        visit((e as any).driverError, depth + 1)
+        visit((e as any).originalError, depth + 1)
+        visit((e as any).innerError, depth + 1)
+        visit((e as any).previous, depth + 1) // some libraries
+    }
+
+    visit(err, 0)
+    return { codes, messages }
+}
+
+/**
+ * Network / transient error codes that should trigger tier2 retry regardless
+ * of where in the error graph they appear.
+ */
+const TIER2_NETWORK_CODES = new Set([
+    "ECONNREFUSED",
+    "ECONNRESET",
+    "ETIMEDOUT",
+    "EHOSTUNREACH",
+    "ENETUNREACH",
+    "ENETDOWN",
+    "EPIPE",
+    "EAI_AGAIN", // transient DNS failure
+])
+
+/**
+ * Postgres SQLSTATE codes that indicate a transient server-side condition:
+ *   40001 — serialization_failure
+ *   57014 — query_canceled
+ *   57P03 — cannot_connect_now
+ *   58P01 — undefined_file (seen during failover)
+ */
+const TIER2_PG_SQLSTATES = new Set(["40001", "57014", "57P03", "58P01"])
 
 /**
  * Classify a Postgres error into a retry tier.
@@ -39,33 +124,64 @@ import { sleep } from "./sleep"
  *            57014, 57P03), recovery mode, replica conflict, etc.
  *            → retry up to maxRetryDuration with 5000ms sleep
  *   - null:  non-retryable → throw immediately
+ *
+ * Recognition is performed across the entire error graph (cause chains,
+ * AggregateError members, driver wrappers) and matches both structured
+ * `code` fields AND substring occurrences inside messages — so errors
+ * where the code has been stringified into a message are still caught.
  */
 export function classifyError(err: any): "tier1" | "tier2" | null {
-    const message = err?.message ?? ""
-    const code = err?.code
+    if (err === null || err === undefined) return null
 
-    if (message.includes("Connection terminated unexpectedly")) {
+    const { codes, messages } = collectErrorFingerprints(err)
+    const anyMessage = messages.join("\n")
+    const lowerMessage = anyMessage.toLowerCase()
+
+    // tier1 — a single broken connection, pool itself is likely fine.
+    if (anyMessage.includes("Connection terminated unexpectedly")) {
         return "tier1"
     }
 
+    // tier2 — network-level or server-side transient failures.
+    for (const c of TIER2_NETWORK_CODES) {
+        if (codes.has(c)) return "tier2"
+    }
+    for (const c of TIER2_PG_SQLSTATES) {
+        if (codes.has(c)) return "tier2"
+    }
+
+    // Some wrappers stringify the code into the message and drop the
+    // structured field. Fall back to substring search — use word-boundary-ish
+    // delimiters to avoid accidentally matching "eCONNREFUSEDByPolicy" etc.
+    const MESSAGE_CODE_PATTERNS = [
+        /\bECONNREFUSED\b/,
+        /\bECONNRESET\b/,
+        /\bETIMEDOUT\b/,
+        /\bEHOSTUNREACH\b/,
+        /\bENETUNREACH\b/,
+        /\bENETDOWN\b/,
+        /\bEPIPE\b/,
+        /\bEAI_AGAIN\b/,
+    ]
+    for (const re of MESSAGE_CODE_PATTERNS) {
+        if (re.test(anyMessage)) return "tier2"
+    }
+
     if (
-        message.includes("Connection terminated due to connection timeout") ||
-        message.includes("timeout exceeded when trying to connect") ||
-        code === "ECONNREFUSED" ||
-        code === "ECONNRESET" ||
-        code === "ETIMEDOUT" ||
-        code === "40001" ||
-        code === "58P01" ||
-        code === "57014" ||
-        code === "57P03" ||
-        message === "the database system is in recovery mode" ||
-        message === "the database system is starting up" ||
-        message
-            .toLowerCase()
-            .includes("query might have conflicted with replica reconnect") ||
-        message
-            .toLowerCase()
-            .includes("canceling statement due to conflict with recovery")
+        anyMessage.includes(
+            "Connection terminated due to connection timeout",
+        ) ||
+        anyMessage.includes("timeout exceeded when trying to connect") ||
+        anyMessage.includes("Client has encountered a connection error") ||
+        anyMessage.includes("the database system is in recovery mode") ||
+        anyMessage.includes("the database system is starting up") ||
+        anyMessage.includes("the database system is shutting down") ||
+        lowerMessage.includes(
+            "query might have conflicted with replica reconnect",
+        ) ||
+        lowerMessage.includes(
+            "canceling statement due to conflict with recovery",
+        )
     ) {
         return "tier2"
     }
@@ -387,14 +503,57 @@ export class PostgresDriver implements Driver {
     // -------------------------------------------------------------------------
 
     maxRetryDuration = 5 * 60 * 1000
+
+    /**
+     * Number of consecutive tier2 (e.g. ECONNREFUSED) failures in
+     * obtainMasterConnection before tearing down and rebuilding the pg Pool.
+     * The pool is usually self-healing, but if it has entered a wedged
+     * state, rebuilding is the only reliable recovery.
+     */
+    poolResetAfterConsecutiveTier2 = 3
+
+    /**
+     * Exposes the module-level {@link classifyError} as an instance method so
+     * layers above the driver (e.g. EntityManager.transaction) can discover
+     * retry eligibility without taking a hard dependency on this module.
+     */
+    classifyError(err: any): "tier1" | "tier2" | null {
+        return classifyError(err)
+    }
+
+    /**
+     * Runs `fn` under a shared retry deadline. Nested retry sites
+     * (e.g. QueryRunner.query, obtainMasterConnection) will honor the
+     * same deadline instead of stacking independent budgets on top.
+     *
+     * Exposed on the driver so EntityManager.transaction can participate
+     * in the same mechanism without a hard dependency on the postgres
+     * module.
+     */
+    withRetryDeadline<T>(budgetMs: number, fn: () => Promise<T>): Promise<T> {
+        return withRetryDeadline(budgetMs, fn)
+    }
+
+    /**
+     * Reads the currently active retry deadline, if any.
+     */
+    getRetryDeadline(): number | undefined {
+        return getRetryDeadline()
+    }
     /**
      * Performs connection to the database.
      * Based on pooling options, it can either create connection immediately,
      * either create a pool and create connection when needed.
      */
     async connect(): Promise<void> {
-        const startTime = Date.now()
+        // Honor an ambient retry deadline if one is already active; otherwise
+        // scope our own. Sharing prevents stacked retry budgets across layers.
+        return withRetryDeadline(this.maxRetryDuration, () =>
+            this.connectWithRetry(),
+        )
+    }
 
+    private async connectWithRetry(): Promise<void> {
         while (true) {
             let queryRunner: PostgresQueryRunner | undefined
             try {
@@ -454,15 +613,26 @@ export class PostgresDriver implements Driver {
                 if (tier === "tier1") {
                     await sleep(500)
                 } else if (tier === "tier2") {
-                    const elapsed = Date.now() - startTime
-                    if (elapsed > this.maxRetryDuration) {
+                    const deadline = getRetryDeadline()
+                    if (deadline !== undefined && Date.now() > deadline) {
                         this.connection.logger.log(
                             "warn",
-                            `Exceeded maximum retry duration in connect (${elapsed}ms)`,
+                            `Retry deadline exceeded in connect`,
                         )
                         throw err
                     }
                     await sleep(5000)
+                    const deadlineAfter = getRetryDeadline()
+                    if (
+                        deadlineAfter !== undefined &&
+                        Date.now() > deadlineAfter
+                    ) {
+                        this.connection.logger.log(
+                            "warn",
+                            `Retry deadline exceeded in connect after sleep`,
+                        )
+                        throw err
+                    }
                 } else {
                     throw err
                 }
@@ -1306,30 +1476,221 @@ export class PostgresDriver implements Driver {
      * Obtains a new database connection to a master server.
      * Used for replication.
      * If replication is not setup then returns default connection's database connection.
+     *
+     * Retries transient failures (ECONNREFUSED, ECONNRESET, ETIMEDOUT, etc.) so
+     * that callers such as QueryRunner.connect() and Driver.afterConnect() do
+     * not surface brief DB outages as fatal errors. Retry budgets mirror the
+     * ones in Driver.connect() / QueryRunner.query():
+     *
+     *   - tier1 ("Connection terminated unexpectedly"): 500 ms sleep, no cap
+     *   - tier2 (ECONNREFUSED et al.): 5000 ms sleep, capped at
+     *     {@link maxRetryDuration}
+     *
+     * If tier2 failures persist past {@link poolResetAfterConsecutiveTier2},
+     * the pool itself is torn down and recreated. This handles the edge case
+     * where the pg Pool's internal state has become wedged. Pool recreation
+     * is guarded against concurrent callers by comparing the captured pool
+     * reference against {@link master}.
+     *
+     * If {@link master} is transiently empty when this is called — e.g. a
+     * prior rebuild failed, or a concurrent caller has torn the pool down
+     * and is mid-rebuild — we do NOT immediately throw
+     * ConnectionIsNotSetError. Doing so would mask a retryable outage
+     * (ECONNREFUSED) as an unrecoverable configuration error, defeating the
+     * retry budget. Instead, the initial-connect path (Driver.connect) is the
+     * sole authority that decides connectivity is fundamentally unset.
      */
     async obtainMasterConnection(): Promise<[PoolClient, Function]> {
-        if (!this.master) {
-            throw new ConnectionIsNotSetError("postgres")
-        }
+        // Honor an ambient retry deadline set by an outer layer (e.g.
+        // EntityManager.transaction or QueryRunner.query). If none is active,
+        // establish one scoped to this call so the retry budget is bounded.
+        return withRetryDeadline(this.maxRetryDuration, () =>
+            this.obtainMasterConnectionWithRetry(),
+        )
+    }
 
-        // pg Pool handles timeouts internally via connectionTimeoutMillis.
-        // No artificial setTimeout wrapper — avoids spurious "Connection failed"
-        // errors and timer/client leaks.
-        const client = await this.master.connect()
+    private async obtainMasterConnectionWithRetry(): Promise<
+        [PoolClient, Function]
+    > {
+        let consecutiveTier2 = 0
 
-        const safeRelease = (err: any) => {
-            try {
-                if (client && typeof client.release === "function") {
-                    client.release(err)
+        while (true) {
+            // Capture the current pool reference so we can detect whether
+            // another concurrent caller has already rebuilt it.
+            let pool = this.master
+
+            // If master is currently empty, try to rebuild it in-place (within
+            // the retry budget) rather than giving up. This covers two cases:
+            //   (a) a previous iteration tore the pool down and createPool()
+            //       failed with a retryable error;
+            //   (b) a concurrent caller is mid-rebuild.
+            // We attempt at most one rebuild per iteration; if it fails
+            // retryably we fall through to the standard tier2 sleep+retry.
+            if (!pool) {
+                const deadline = getRetryDeadline()
+                if (deadline !== undefined && Date.now() > deadline) {
+                    this.connection.logger.log(
+                        "warn",
+                        `Retry deadline exceeded while master pool is unavailable`,
+                    )
+                    throw new ConnectionIsNotSetError("postgres")
                 }
-            } catch (releaseError) {
-                this.connection.logger.log(
-                    "warn",
-                    `Error releasing connection: ${releaseError}`,
-                )
+                try {
+                    const rebuilt = await this.createPool(
+                        this.options,
+                        this.options,
+                    )
+                    if (!this.master) {
+                        this.master = rebuilt
+                    } else {
+                        // Another caller already rebuilt; discard ours.
+                        try {
+                            await rebuilt.end()
+                        } catch {
+                            /* noop */
+                        }
+                    }
+                    pool = this.master
+                    if (!pool) {
+                        // Extremely unlikely, but stay defensive.
+                        await sleep(500)
+                        continue
+                    }
+                } catch (rebuildErr) {
+                    const rebuildTier = classifyError(rebuildErr)
+                    if (rebuildTier === null) {
+                        throw rebuildErr
+                    }
+                    await sleep(rebuildTier === "tier2" ? 5000 : 500)
+                    continue
+                }
+            }
+
+            try {
+                // pg Pool handles timeouts internally via connectionTimeoutMillis.
+                // No artificial setTimeout wrapper — avoids spurious
+                // "Connection failed" errors and timer/client leaks.
+                const client = await pool.connect()
+
+                const safeRelease = (err: any) => {
+                    try {
+                        if (client && typeof client.release === "function") {
+                            client.release(err)
+                        }
+                    } catch (releaseError) {
+                        this.connection.logger.log(
+                            "warn",
+                            `Error releasing connection: ${releaseError}`,
+                        )
+                    }
+                }
+                return [client, safeRelease]
+            } catch (err) {
+                const tier = classifyError(err)
+
+                if (tier === null) {
+                    throw err
+                }
+
+                if (tier === "tier2") {
+                    // Check deadline before deciding to retry.
+                    const deadline = getRetryDeadline()
+                    if (deadline !== undefined && Date.now() > deadline) {
+                        this.connection.logger.log(
+                            "warn",
+                            `Retry deadline exceeded in obtainMasterConnection`,
+                        )
+                        throw err
+                    }
+
+                    consecutiveTier2 += 1
+
+                    // If the pool has been failing for a while, it may be in
+                    // a wedged state. Rebuild it. Guarded so only one
+                    // concurrent caller actually performs the rebuild.
+                    //
+                    // Ordering matters:
+                    //   1. Build the replacement pool into a local variable.
+                    //   2. Only after success, atomically swap `this.master`
+                    //      and tear down the old pool.
+                    // This avoids two hazards:
+                    //   (a) transient `this.master === undefined` windows that
+                    //       would cause concurrent callers to see an empty
+                    //       pool, and that would downgrade a retryable
+                    //       ECONNREFUSED into an unrecoverable
+                    //       ConnectionIsNotSetError in a later iteration;
+                    //   (b) tearing down the old pool before a replacement
+                    //       exists, which would leave callers with a closed
+                    //       pool if createPool() then fails.
+                    if (
+                        consecutiveTier2 >=
+                            this.poolResetAfterConsecutiveTier2 &&
+                        this.master === pool
+                    ) {
+                        try {
+                            const rebuilt = await this.createPool(
+                                this.options,
+                                this.options,
+                            )
+                            if (this.master === pool) {
+                                this.master = rebuilt
+                                // Tear down the old, wedged pool only after
+                                // the replacement is in place.
+                                try {
+                                    pool.removeAllListeners()
+                                    await pool.end()
+                                } catch (cleanupErr) {
+                                    this.connection.logger.log(
+                                        "warn",
+                                        `Error ending old pool during retry: ${cleanupErr}`,
+                                    )
+                                }
+                            } else {
+                                // Another caller swapped in a new pool while
+                                // we were building; discard ours.
+                                try {
+                                    await rebuilt.end()
+                                } catch {
+                                    /* noop */
+                                }
+                            }
+                        } catch (recreateErr) {
+                            // Rebuild failed. Keep the old pool reference in
+                            // place (still potentially usable) and let the
+                            // retry loop continue. Non-retryable errors
+                            // surface immediately.
+                            const recreateTier = classifyError(recreateErr)
+                            if (recreateTier === null) {
+                                throw recreateErr
+                            }
+                            // fall through to sleep + retry
+                        }
+                        consecutiveTier2 = 0
+                    }
+
+                    // Sleep, then re-check the deadline before continuing —
+                    // so we don't perform an extra attempt after expiry.
+                    await sleep(5000)
+                    const deadlineAfter = getRetryDeadline()
+                    if (
+                        deadlineAfter !== undefined &&
+                        Date.now() > deadlineAfter
+                    ) {
+                        this.connection.logger.log(
+                            "warn",
+                            `Retry deadline exceeded in obtainMasterConnection after sleep`,
+                        )
+                        throw err
+                    }
+                    continue
+                }
+
+                // tier1: indefinite retry with short sleep
+                consecutiveTier2 = 0
+                await sleep(500)
+                continue
             }
         }
-        return [client, safeRelease]
     }
 
     /**

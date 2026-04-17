@@ -28,6 +28,7 @@ import { MetadataTableType } from "../types/MetadataTableType"
 import { ReplicationMode } from "../types/ReplicationMode"
 import { PostgresDriver, classifyError } from "./PostgresDriver"
 import { sleep } from "./sleep"
+import { getRetryDeadline, withRetryDeadline } from "./retryContext"
 
 /**
  * Runs queries on a single postgres database connection.
@@ -225,13 +226,32 @@ export class PostgresQueryRunner
         parameters?: any[],
         useStructuredResult: boolean = false,
     ): Promise<any> {
+        // Honor ambient retry deadline if one is active; otherwise scope our
+        // own. Shared deadline prevents layered retries from stacking budgets.
+        return withRetryDeadline(this.driver.maxRetryDuration, () =>
+            this.queryWithRetry(query, parameters, useStructuredResult),
+        )
+    }
+
+    private async queryWithRetry(
+        query: string,
+        parameters?: any[],
+        useStructuredResult: boolean = false,
+    ): Promise<any> {
         const broadcasterResult = new BroadcasterResult()
-        let retryStartTime: number | undefined
 
         while (true) {
-            const databaseConnection = await this.connect()
-
             try {
+                // Acquiring a connection can itself fail with a retryable
+                // error (e.g. ECONNREFUSED from pg Pool.connect). Keep this
+                // inside the try block so such failures go through the same
+                // tier1/tier2 retry path as query execution errors.
+                // obtainMasterConnection already retries internally, but this
+                // outer loop provides defense-in-depth and ensures the tier
+                // classification / transaction-safety rules are enforced
+                // uniformly regardless of which layer raised the error.
+                const databaseConnection = await this.connect()
+
                 await this.broadcaster.broadcast(
                     "BeforeQuery",
                     query,
@@ -313,20 +333,35 @@ export class PostgresQueryRunner
                     this.isReleased = false
 
                     if (tier === "tier2") {
-                        // Start the retry clock from the first failure,
-                        // not from when the query started executing.
-                        if (!retryStartTime) retryStartTime = Date.now()
-                        const elapsed = Date.now() - retryStartTime
-                        if (elapsed > this.driver.maxRetryDuration) {
+                        // Deadline is established by withRetryDeadline() at
+                        // the top of query(); honor it both before and after
+                        // sleep to ensure strict adherence.
+                        const deadline = getRetryDeadline()
+                        if (deadline !== undefined && Date.now() > deadline) {
                             this.driver.connection.logger.log(
                                 "warn",
-                                `Exceeded maximum retry duration in query (${elapsed}ms)`,
+                                `Retry deadline exceeded in query`,
                             )
                             throw new QueryFailedError(query, parameters, err)
                         }
                     }
 
                     await sleep(tier === "tier1" ? 500 : 5000)
+
+                    if (tier === "tier2") {
+                        const deadlineAfter = getRetryDeadline()
+                        if (
+                            deadlineAfter !== undefined &&
+                            Date.now() > deadlineAfter
+                        ) {
+                            this.driver.connection.logger.log(
+                                "warn",
+                                `Retry deadline exceeded in query after sleep`,
+                            )
+                            throw new QueryFailedError(query, parameters, err)
+                        }
+                    }
+
                     continue
                 }
 
