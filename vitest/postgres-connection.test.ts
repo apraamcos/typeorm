@@ -394,8 +394,20 @@ describe("PostgresDriver.obtainMasterConnection", () => {
         ;(driver as any).options = {} as any
     })
 
-    it("should throw when pool (this.master) is not set", async () => {
+    it("should eventually throw when pool (this.master) is not set and cannot be rebuilt", async () => {
+        // obtainMasterConnection() now self-heals: if this.master is empty it
+        // attempts to rebuild the pool within the retry deadline rather than
+        // immediately throwing ConnectionIsNotSetError (which would mask a
+        // retryable ECONNREFUSED as an unrecoverable config error).
+        // With maxRetryDuration=0, the deadline is already expired on entry
+        // so we should fail fast.
         ;(driver as any).master = undefined
+        ;(driver as any).maxRetryDuration = -1
+        ;(driver as any).createPool = vi
+            .fn()
+            .mockRejectedValue(
+                Object.assign(new Error("refused"), { code: "ECONNREFUSED" }),
+            )
         await expect(driver.obtainMasterConnection()).rejects.toThrow()
     })
 
@@ -682,10 +694,12 @@ describe("PostgresDriver.connect", () => {
 
         await expect(driver.connect()).rejects.toThrow()
 
-        // attempt 1: elapsed=0 < 200 → sleep → time+=150
-        // attempt 2: elapsed=150 < 200 → sleep → time+=150
-        // attempt 3: elapsed=300 > 200 → throw
-        expect(mockCreatePool).toHaveBeenCalledTimes(3)
+        // Deadline is checked both before AND after sleep to ensure we do not
+        // waste one extra attempt once the budget is exhausted.
+        //   withRetryDeadline: Date.now()=1000, deadline=1200
+        //   attempt 1: 1000<1200 → sleep → time+=150 (1150) → 1150<1200 → continue
+        //   attempt 2: 1150<1200 → sleep → time+=150 (1300) → 1300>1200 → throw
+        expect(mockCreatePool).toHaveBeenCalledTimes(2)
 
         Date.now = realNow
     })
@@ -1063,10 +1077,11 @@ describe("PostgresQueryRunner.query", () => {
             QueryFailedError,
         )
 
-        // attempt 1: elapsed=0 < 200 → sleep → time+=150
-        // attempt 2: elapsed=150 < 200 → sleep → time+=150
-        // attempt 3: elapsed=300 > 200 → throw
-        expect(driver.obtainMasterConnection).toHaveBeenCalledTimes(3)
+        // Deadline is checked both before AND after sleep.
+        //   withRetryDeadline: Date.now()=1000, deadline=1200
+        //   attempt 1: 1000<1200 → sleep → time+=150 (1150) → 1150<1200 → continue
+        //   attempt 2: 1150<1200 → sleep → time+=150 (1300) → 1300>1200 → throw
+        expect(driver.obtainMasterConnection).toHaveBeenCalledTimes(2)
 
         Date.now = realNow
     })
@@ -1142,19 +1157,18 @@ describe("PostgresQueryRunner.query", () => {
         driver.options.maxQueryExecutionTime = 50
 
         const realDateNow = Date.now
-        let callCount = 0
-        vi.spyOn(Date, "now").mockImplementation(() => {
-            callCount++
-            // 1st call: queryStartTime
-            // 2nd call: queryEndTime (100ms later)
-            if (callCount <= 1) return 1000
-            return 1100
-        })
+        // Use a monotonic virtual clock. The exact number of Date.now() calls
+        // inside query() is not part of the contract (withRetryDeadline,
+        // deadline checks, etc. may also call it). What matters is the delta
+        // between queryStartTime and queryEndTime. We advance the clock by
+        // 100ms *during* the db query itself, so the start/end readings
+        // straddle that advance regardless of other Date.now() calls.
+        let currentTime = 1000
+        vi.spyOn(Date, "now").mockImplementation(() => currentTime)
 
-        mockDbConnection.query.mockResolvedValue({
-            rows: [],
-            rowCount: 0,
-            command: "SELECT",
+        mockDbConnection.query.mockImplementation(async () => {
+            currentTime += 100
+            return { rows: [], rowCount: 0, command: "SELECT" }
         })
 
         await queryRunner.query("SELECT 1")
