@@ -73,7 +73,7 @@
     "debug": "^4.4.3",
     "dedent": "^1.7.0",
     "dotenv": "^16.6.1",
-    "glob": "^10.4.5",
+    "glob": "^13.0.6",
     "reflect-metadata": "*",
     "sha.js": "^2.4.12",
     "sql-highlight": "^6.1.0",
@@ -188,18 +188,7 @@
     }
   },
   "engines": {
-    "node": ">=16.13.0"
-  },
-  "overrides": {
-    "minimatch@3": {
-      "brace-expansion": "1.1.16"
-    },
-    "minimatch@9": {
-      "brace-expansion": "2.1.2"
-    },
-    "minimatch@10": {
-      "brace-expansion": "5.0.8"
-    }
+    "node": ">=18.0.0"
   },
   "scripts": {
     "test": "rimraf ./build && tsc && mocha --file ./build/compiled/test/utils/test-setup.js --bail --recursive --timeout 90000 ./build/compiled/test",
