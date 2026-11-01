@@ -1325,13 +1325,17 @@ export class PostgresDriver implements Driver {
         } catch (error) {
             // Pool stats tell apart "clients checked out and never returned"
             // (idle=0, total=max) from "stuck creating new clients".
-            this.connection.logger.log(
-                "warn",
-                `Failed to obtain connection from pool: ${error?.message} ` +
-                    `(total=${this.master.totalCount}, idle=${this.master.idleCount}, ` +
-                    `waiting=${this.master.waitingCount}, ` +
-                    `connectedQueryRunners=${this.connectedQueryRunners.length})`,
-            )
+            // Diagnostics must never mask the original error.
+            try {
+                const pool: any = this.master
+                this.connection.logger.log(
+                    "warn",
+                    `Failed to obtain connection from pool: ${error?.message} ` +
+                        `(total=${pool?.totalCount}, idle=${pool?.idleCount}, ` +
+                        `waiting=${pool?.waitingCount}, ` +
+                        `connectedQueryRunners=${this.connectedQueryRunners?.length})`,
+                )
+            } catch (_) {}
             throw error
         }
 

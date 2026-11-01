@@ -533,8 +533,8 @@ describe("PostgresDriver.connect", () => {
         expect(mockCreatePool).toHaveBeenCalledTimes(2)
     })
 
-    it("tier-1 should retry INDEFINITELY — no maxRetryDuration cap", async () => {
-        driver.maxRetryDuration = 100 // very short cap
+    it("tier-1 should keep retrying within maxRetryDuration and then succeed", async () => {
+        driver.maxRetryDuration = 1000
 
         const realNow = Date.now
         let currentTime = 1000
@@ -554,16 +554,44 @@ describe("PostgresDriver.connect", () => {
         setupSuccessfulQueryRunner()
 
         vi.mocked(sleep).mockImplementation(async () => {
-            currentTime += 50 // advance time past maxRetryDuration each sleep
+            currentTime += 50
         })
 
-        // Despite elapsed time >> maxRetryDuration, tier-1 keeps retrying
+        // 10 failures * 50ms = 500ms elapsed, still within the 1000ms cap
         await driver.connect()
 
         expect(callCount).toBe(11)
-        // Time is now 1000 + 10*50 = 1500, well past maxRetryDuration=100
-        // But it still connected successfully
         expect(sleep).toHaveBeenCalledTimes(10)
+
+        Date.now = realNow
+    })
+
+    it("tier-1 should stop retrying after maxRetryDuration", async () => {
+        driver.maxRetryDuration = 100 // very short cap
+
+        const realNow = Date.now
+        let currentTime = 1000
+        vi.spyOn(Date, "now").mockImplementation(() => currentTime)
+
+        let callCount = 0
+        mockCreatePool.mockImplementation(() => {
+            callCount++
+            return Promise.reject(
+                new Error("Connection terminated unexpectedly"),
+            )
+        })
+
+        vi.mocked(sleep).mockImplementation(async () => {
+            currentTime += 50
+        })
+
+        await expect(driver.connect()).rejects.toThrow(
+            "Connection terminated unexpectedly",
+        )
+
+        // elapsed 0, 50, 100 → retry; 150 > 100 → give up
+        expect(callCount).toBe(4)
+        expect(sleep).toHaveBeenCalledTimes(3)
 
         Date.now = realNow
     })
@@ -853,8 +881,8 @@ describe("PostgresQueryRunner.query", () => {
         expect(sleep).not.toHaveBeenCalled()
     })
 
-    it("tier-1 query retry should be INDEFINITE — no maxRetryDuration cap", async () => {
-        driver.maxRetryDuration = 50 // very short cap
+    it("tier-1 query retry should keep retrying within maxRetryDuration and then succeed", async () => {
+        driver.maxRetryDuration = 1000
 
         const realNow = Date.now
         let currentTime = 1000
@@ -880,15 +908,47 @@ describe("PostgresQueryRunner.query", () => {
         })
 
         vi.mocked(sleep).mockImplementation(async () => {
-            currentTime += 100 // each sleep advances past maxRetryDuration
+            currentTime += 100
         })
 
-        // Should eventually succeed despite elapsed >> maxRetryDuration
+        // 5 failures, last one at 400ms elapsed — still within the 1000ms cap
         const result = await queryRunner.query("SELECT 1")
 
         expect(result).toEqual([{ ok: 1 }])
         expect(callCount).toBe(6)
-        // Total elapsed = 5 * 100 = 500ms >> maxRetryDuration=50ms, but still succeeded
+
+        Date.now = realNow
+    })
+
+    it("tier-1 query retry should stop after maxRetryDuration", async () => {
+        driver.maxRetryDuration = 50 // very short cap
+
+        const realNow = Date.now
+        let currentTime = 1000
+        vi.spyOn(Date, "now").mockImplementation(() => currentTime)
+
+        let callCount = 0
+        const brokenConn = makeFakeClient()
+        brokenConn.query.mockRejectedValue(
+            new Error("Connection terminated unexpectedly"),
+        )
+
+        driver.obtainMasterConnection = vi.fn().mockImplementation(() => {
+            callCount++
+            return Promise.resolve([brokenConn, vi.fn()])
+        })
+
+        vi.mocked(sleep).mockImplementation(async () => {
+            currentTime += 100
+        })
+
+        await expect(queryRunner.query("SELECT 1")).rejects.toThrow(
+            QueryFailedError,
+        )
+
+        // 1st failure at 0ms → retry; 2nd failure at 100ms > 50ms → give up
+        expect(callCount).toBe(2)
+        expect(sleep).toHaveBeenCalledTimes(1)
 
         Date.now = realNow
     })
