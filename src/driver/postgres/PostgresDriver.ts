@@ -34,7 +34,7 @@ import { sleep } from "./sleep"
  * Classify a Postgres error into a retry tier.
  *
  *   - tier1: "Connection terminated unexpectedly"
- *            → retry indefinitely with 500ms sleep
+ *            → retry up to maxRetryDuration with 500ms sleep
  *   - tier2: ECONNREFUSED, ECONNRESET, ETIMEDOUT, PG codes (40001, 58P01,
  *            57014, 57P03), recovery mode, replica conflict, etc.
  *            → retry up to maxRetryDuration with 5000ms sleep
@@ -451,21 +451,24 @@ export class PostgresDriver implements Driver {
                     this.master = undefined
                 }
 
-                if (tier === "tier1") {
-                    await sleep(500)
-                } else if (tier === "tier2") {
-                    const elapsed = Date.now() - startTime
-                    if (elapsed > this.maxRetryDuration) {
-                        this.connection.logger.log(
-                            "warn",
-                            `Exceeded maximum retry duration in connect (${elapsed}ms)`,
-                        )
-                        throw err
-                    }
-                    await sleep(5000)
-                } else {
+                if (!tier) {
                     throw err
                 }
+
+                const elapsed = Date.now() - startTime
+                if (elapsed > this.maxRetryDuration) {
+                    this.connection.logger.log(
+                        "warn",
+                        `Exceeded maximum retry duration in connect (${elapsed}ms)`,
+                    )
+                    throw err
+                }
+
+                this.connection.logger.log(
+                    "warn",
+                    `Retrying connect after ${tier} error (${elapsed}ms elapsed): ${err?.message}`,
+                )
+                await sleep(tier === "tier1" ? 500 : 5000)
             }
         }
     }
@@ -477,18 +480,19 @@ export class PostgresDriver implements Driver {
         try {
             const extensionsMetadata = await this.checkMetadataForExtensions()
             const [connection, release] = await this.obtainMasterConnection()
-            const installExtensions =
-                this.options.installExtensions === undefined ||
-                this.options.installExtensions
-            if (installExtensions && extensionsMetadata.hasExtensions) {
-                await this.enableExtensions(extensionsMetadata, connection)
-            }
+            try {
+                const installExtensions =
+                    this.options.installExtensions === undefined ||
+                    this.options.installExtensions
+                if (installExtensions && extensionsMetadata.hasExtensions) {
+                    await this.enableExtensions(extensionsMetadata, connection)
+                }
 
-            this.isGeneratedColumnsSupported = VersionUtils.isGreaterOrEqual(
-                this.version,
-                "12.0",
-            )
-            await release()
+                this.isGeneratedColumnsSupported =
+                    VersionUtils.isGreaterOrEqual(this.version, "12.0")
+            } finally {
+                await release()
+            }
         } catch (error) {
             console.info("PostgresDriver afterConnect release error", error)
             throw error
@@ -1315,7 +1319,21 @@ export class PostgresDriver implements Driver {
         // pg Pool handles timeouts internally via connectionTimeoutMillis.
         // No artificial setTimeout wrapper — avoids spurious "Connection failed"
         // errors and timer/client leaks.
-        const client = await this.master.connect()
+        let client: PoolClient
+        try {
+            client = await this.master.connect()
+        } catch (error) {
+            // Pool stats tell apart "clients checked out and never returned"
+            // (idle=0, total=max) from "stuck creating new clients".
+            this.connection.logger.log(
+                "warn",
+                `Failed to obtain connection from pool: ${error?.message} ` +
+                    `(total=${this.master.totalCount}, idle=${this.master.idleCount}, ` +
+                    `waiting=${this.master.waitingCount}, ` +
+                    `connectedQueryRunners=${this.connectedQueryRunners.length})`,
+            )
+            throw error
+        }
 
         const safeRelease = (err: any) => {
             try {
@@ -1337,7 +1355,9 @@ export class PostgresDriver implements Driver {
      * If replication is not setup then returns master (default) connection's database connection.
      */
     async obtainSlaveConnection(): Promise<[any, Function]> {
-        return new Promise((ok, fail) => {})
+        // Replication is not supported; fall back to master instead of
+        // returning a promise that never settles.
+        return this.obtainMasterConnection()
     }
 
     /**

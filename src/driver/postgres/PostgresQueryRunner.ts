@@ -84,29 +84,41 @@ export class PostgresQueryRunner
             return this.databaseConnection
         }
 
+        // Concurrent connect() calls must share one pool client, otherwise
+        // the extra clients are never released and the pool is exhausted.
+        if (this.databaseConnectionPromise) {
+            return this.databaseConnectionPromise
+        }
+
         this.databaseConnectionPromise = (async () => {
             try {
                 const [connection, release] =
                     await this.driver.obtainMasterConnection()
 
+                // release() was called while we were waiting for the pool.
+                if (this.isReleased) {
+                    release()
+                    throw new QueryRunnerAlreadyReleasedError()
+                }
+
                 this.driver.connectedQueryRunners.push(this)
                 this.databaseConnection = connection
 
-                const onErrorCallback = async (err: Error) => {
-                    return await this.releasePostgresConnection(err)
+                const onErrorCallback = (err: Error) => {
+                    // Give the broken client back to the pool (destroying it)
+                    // but keep the runner usable: the next query on the dead
+                    // client fails and goes through the normal retry/throw path.
+                    this.releaseClient(err)
                 }
 
                 this.releaseCallback = (err?: Error) => {
-                    this.databaseConnection.removeListener(
-                        "error",
-                        onErrorCallback,
-                    )
+                    connection.removeListener("error", onErrorCallback)
                     release(err)
                 }
 
-                this.databaseConnection.on("error", onErrorCallback)
+                connection.on("error", onErrorCallback)
 
-                return this.databaseConnection
+                return connection
             } catch (error) {
                 this.databaseConnectionPromise = undefined
                 throw error
@@ -122,13 +134,32 @@ export class PostgresQueryRunner
      */
     private async releasePostgresConnection(err?: Error) {
         if (this.isReleased) {
+            this.releaseClient(err)
             return
         }
 
         this.isReleased = true
+
+        // connect() may still be waiting for a pool client; it checks
+        // isReleased and returns the client itself, just wait for it here.
+        if (!this.databaseConnection && this.databaseConnectionPromise) {
+            try {
+                await this.databaseConnectionPromise
+            } catch (_) {}
+        }
+
+        this.releaseClient(err)
+    }
+
+    /**
+     * Returns the current pool client (if any) to the pool and unregisters
+     * this runner from the driver. Safe to call multiple times.
+     */
+    private releaseClient(err?: Error) {
         if (this.releaseCallback) {
-            this.releaseCallback(err)
+            const releaseCallback = this.releaseCallback
             this.releaseCallback = undefined
+            releaseCallback(err)
         }
 
         const index = this.driver.connectedQueryRunners.indexOf(this)
@@ -229,6 +260,8 @@ export class PostgresQueryRunner
         let retryStartTime: number | undefined
 
         while (true) {
+            if (this.isReleased) throw new QueryRunnerAlreadyReleasedError()
+
             const databaseConnection = await this.connect()
 
             try {
@@ -307,24 +340,30 @@ export class PostgresQueryRunner
                     // connection would have no transaction context, and
                     // re-executing the failed query would run in autocommit
                     // mode, causing silent data-integrity violations.
-                    await this.releasePostgresConnection(err)
-                    this.databaseConnection = undefined
-                    this.databaseConnectionPromise = undefined
-                    this.isReleased = false
-
-                    if (tier === "tier2") {
-                        // Start the retry clock from the first failure,
-                        // not from when the query started executing.
-                        if (!retryStartTime) retryStartTime = Date.now()
-                        const elapsed = Date.now() - retryStartTime
-                        if (elapsed > this.driver.maxRetryDuration) {
-                            this.driver.connection.logger.log(
-                                "warn",
-                                `Exceeded maximum retry duration in query (${elapsed}ms)`,
-                            )
-                            throw new QueryFailedError(query, parameters, err)
-                        }
+                    // Only drop the client if a concurrent query on this
+                    // runner hasn't already replaced it.
+                    if (this.databaseConnection === databaseConnection) {
+                        this.releaseClient(err)
+                        this.databaseConnection = undefined
+                        this.databaseConnectionPromise = undefined
                     }
+
+                    // Start the retry clock from the first failure,
+                    // not from when the query started executing.
+                    if (!retryStartTime) retryStartTime = Date.now()
+                    const elapsed = Date.now() - retryStartTime
+                    if (elapsed > this.driver.maxRetryDuration) {
+                        this.driver.connection.logger.log(
+                            "warn",
+                            `Exceeded maximum retry duration in query (${elapsed}ms)`,
+                        )
+                        throw new QueryFailedError(query, parameters, err)
+                    }
+
+                    this.driver.connection.logger.log(
+                        "warn",
+                        `Retrying query after ${tier} error (${elapsed}ms elapsed): ${err?.message}`,
+                    )
 
                     await sleep(tier === "tier1" ? 500 : 5000)
                     continue
