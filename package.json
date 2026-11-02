@@ -73,7 +73,7 @@
     "debug": "^4.4.3",
     "dedent": "^1.7.0",
     "dotenv": "^16.6.1",
-    "glob": "^13.0.6",
+    "glob": "^14.0.2",
     "reflect-metadata": "*",
     "sha.js": "^2.4.12",
     "sql-highlight": "^6.1.0",
@@ -135,7 +135,7 @@
   "peerDependencies": {
     "pg": "^8.20.0",
     "reflect-metadata": "*",
-    "snowflake-sdk": "latest"
+    "snowflake-sdk": "*"
   },
   "peerDependenciesMeta": {
     "@google-cloud/spanner": {
